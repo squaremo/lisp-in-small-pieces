@@ -122,6 +122,8 @@
   (set! $env.global ($extend name val $env.global)))
 
 (define (comparison fn) (lambda (vals) (if (fn vals) #t $false)))
+;; This is kind of vestigial, but I may want this later if application
+;; changes.
 (define ($fn fn) fn)
 
 ($def '< (comparison <))
@@ -166,6 +168,18 @@
           (cons ($evaluate (car exprs) env)
                 (eval-exprs (cdr exprs) env))
           (list ($evaluate (car exprs) env)))))
+
+;; From the book's answer: the outer test only needs to be done once.
+(define (eval-args exprs env)
+  (define (evargs exprs)
+    ;; can assume (pair? exprs)
+    (if (pair? (cdr exprs))
+        (cons ($evaluate (car exprs) env)
+              (evargs (cdr exprs)))
+        (list ($evaluate (car exprs) env))))
+  (if (pair? exprs)
+      (evargs exprs)
+      '()))
 
 ;; Exercise 1.3
 
@@ -241,3 +255,12 @@
          expr)
         (else
           ($wrong "Cannot evaluate atom" expr)))))
+
+;; Exercise 1.8
+
+;; Define apply
+
+($def 'apply ($fn apply))
+;; book answer has more complication, because of its apply convention,
+;; and syntax for defining things. Technically I ought to do more
+;; argument checking; I leave it to the interpreting language.
