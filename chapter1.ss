@@ -101,10 +101,11 @@
       $undef))
 
 (define ($make-function variables body env)
-  (lambda values ;; A departure: rather than accepting an argument
-                 ;; that is the list of arguments, expect to be
-                 ;; applied to a list of arguments. This makes lifting
-                 ;; and dropping procedures easier.
+  (lambda values
+    ;; A departure: rather than accepting an argument that is the list
+    ;; of arguments, expect to be applied to a list of arguments. This
+    ;; makes lifting and dropping procedures easier.  However, it
+    ;; means an env (e.g., a dynamic env) cannot be passed as well.
     ($eprogn body ($extend variables values env))))
 
 (define ($invoke fn values)
@@ -141,6 +142,10 @@
             (display ($evaluate (read) $env.global))
             (toplevel)))))
   (toplevel))
+
+;; arguably the book does this more nicely by capturing the
+;; continuation on invocation of repl and supplying that as the 'end'
+;; function.
 
 ;; Exercise 1.1
 
