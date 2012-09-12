@@ -237,21 +237,60 @@
 
 ;; NB1 Following the book, this allocates space for the function and
 ;; uses that as its 'tag', but does not update memory to reflect
-;; this. Presumably this anticipates further modification.
+;; this. Presumably this anticipates further modification. (A: No,
+;; it's so procedures can be compared)
+
+;; Updated in exercise 4.7 to handle improper lists of arguments, and
+;; an extension: handle a symbol meaning the entire list of args.
 
 (define (evaluate-lambda names body env mem k)
-  (let ((arity (length names)))
-    (allocate 1 mem
-              (lambda (a* mem')
-                (k (create-function
-                    (car a*)
-                    (lambda (vals mem1 k)
-                      (allocate arity mem1
-                                (lambda (as mem1')
-                                  (evaluate-begin body
-                                                  (update* env names as)
-                                                  (update* mem1' as vals)
-                                                  k))))) mem')))))
+  (let ((arity (arg-length names)))
+    (allocate
+     1 mem
+     (lambda (a* mem')
+       (k (create-function
+           (car a*)
+           (lambda (vals mem1 k)
+             (allocate arity mem1
+                       (lambda (as mem1')
+                         (evaluate-begin body
+                                         (update-env-args env names as)
+                                         (update-store-args mem1' as vals names)
+                                         k))))) mem')))))
+
+;; Update the env according to the list of addresses. Since the
+;; addresses have been allocated according to the arity of the
+;; argument list, we can rely on it having the right number of
+;; addresses.
+(define (update-store-args s as vs names)
+  (cond ((pair? names)
+         (update-store-args (update s (car as) (car vs))
+                            (cdr as) (cdr vs) (cdr names)))
+        ((null? names) s)
+        (else
+          (allocate-list vs s (lambda (head ss)
+                                (update ss (car as) head))))))
+
+;; Again, trust the addresses to have the correct arity
+(define (update-env-args env names as)
+  (cond ((pair? names)
+         (update-env-args (update env (car names) (car as))
+                          (cdr names) (cdr as)))
+        ((null? names) env)
+        (else
+          (update env names (car as)))))
+
+;; this may not tell the whole story about whether an argument list is
+;; the correcy arity
+(define (arg-length names)
+  (define (arg-length1 names n)
+    (cond
+      ((pair? names) (arg-length1 (cdr names) (+ 1 n)))
+      ((null? names) n)
+      (else (+ 1 n))))
+  (cond
+    ((pair? names) (arg-length1 (cdr names) 1))
+    (else 1)))
 
 ;; (the book has it this way; technically it doesn't need to pass the
 ;; env to eval-args; maybe it's to allow modification in an exercise
