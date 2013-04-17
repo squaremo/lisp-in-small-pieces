@@ -3,12 +3,12 @@
 ;; lexical environment and instructions, and the dynamic the
 ;; activation frames and continuation.
 ;;
-;; Activation frames represent memory; that is, they store values
-;; against addresses. The environment maps names to those addresses,
+;; Activation frames represent memory: they store values against
+;; addresses. The environment maps names to those addresses,
 ;; abstractly -- that is, we determine which activation frame will
 ;; have the memory address while compiling, and look it up at
-;; runtime. The only representation of memory kept in this interpreter
-;; is the activation records.
+;; runtime. The only representations of memory kept in this
+;; interpreter are the activation records and the memory for globals.
 
 (define (compiler-error . bobbins)
   (error bobbins))
@@ -16,12 +16,14 @@
 (define (runtime-error . bobbins)
   (error bobbins))
 
-;; Environments and activation records. Both contain maps, and
-;; activation records contain a link to the next record.
-
 (import type-system)
 (import generic-procedures)
 (import oo)
+
+;; Environments and activation records. Both contain maps, and
+;; activation records contain a link to the next record. Below we'll
+;; actually use assoc lists for lexical environments, so having two
+;; classes is overegging it, but it's what the book does.
 
 (define-generics :next :next! :args :args! :argument :argument!)
 
@@ -45,13 +47,16 @@
   (vector-set! (:args frame) index value))
 
 
-;; Extend the activation frame (working memory, I guess)
+;; Extend the activation frame (working memory)
 (define (sr-extend* sr v*)
   (:next! v* sr)
   v*)
 
 ;; Extend the environment. This works slightly differently to the
-;; activation records -- it's just a list of assoc lists. (Why?)
+;; activation records -- it's just a list of assoc lists. (Why?
+;; Because we only do lookups in the environment while pretreating
+;; expressions, resulting in *references to locations* in activation
+;; frames)
 (define (r-extend* r n*)
   (cons n* r))
 
@@ -86,20 +91,21 @@
       (deep-update! (:next sr) (- i 1) j value)))
 
 ;; Global (top-level) variables: these are in two varieties, mutable
-;; (defined by the program?) and immutable (primitives). They can be
+;; (defined by the program) and immutable (primitives). They can be
 ;; shadowed of course, and we know this at interpretation time, so we
 ;; can insert the correct lookup.
 
-(define (compute-kind r n)
-  (or (local-variable? r 0 n)
-      (global-variable? g.current n)
-      (global-variable? g.init n)))
-(define (global-variable? g n)
-  (let ((var (assq n g)))
-    (and (pair? var) (cdr var))))
+;; Global envs are just a list of (name (kind . addr)) i.e., an
+;; assoc list. The addr is a vector index into our 'memory'.
 
-;; Global envs are just a list of (addr (global . name))
-;; i.e., an assoc list
+;; Mutable globals
+(define g.current '())
+;; Predefined globals
+(define g.init '())
+
+;; And global memory is just a vector.
+(define sg.current (make-vector 100))
+(define sg.init (make-vector 100))
 
 (define (g.current-extend! n)
   (let ((level (length g.current)))
@@ -111,9 +117,13 @@
     (set! g.init (cons (cons n `(predefined . ,level)) g.init))
     level))
 
-;; and global memory is just a vector
-(define sg.current (make-vector 100))
-(define sg.init (make-vector 100))
+(define (compute-kind r n)
+  (or (local-variable? r 0 n)
+      (global-variable? g.current n)
+      (global-variable? g.init n)))
+(define (global-variable? g n)
+  (let ((var (assq n g)))
+    (and (pair? var) (cdr var))))
 
 (define (global-fetch i)
   (vector-ref sg.current i))
@@ -123,41 +133,13 @@
 (define (global-update! i v)
   (vector-set! sg.current i v))
 
-;; Redefine or initialise a global variable (either predef'd or user)
-
-;; NB ref to r.init -- ugly.
-
-(define UNDEFINED '(constant . undefined))
-
-(define (g.current-init! name)
-  (let ((kind (compute-kind r.init name)))
-    (if kind
-        (case (car kind)
-          ((global)
-           (global-update! (cdr kind) UNDEFINED))
-          (else
-            (compiler-error "Bad redefinition" name kind)))
-        (let ((index (g.current-extend! name)))
-          (global-update! index UNDEFINED))))
-  name)
-
-(define (g.init-init! name value)
-  (let ((kind (compute-kind r.init name)))
-    (if kind
-        (case (car kind)
-          ((predefined)
-           (vector-set! sg.init (cdr kind) value))
-          (else (compiler-error "Bad redefinition" name kind)))
-        (let ((index (g.init-extend! name)))
-          (vector-set! sg.init index value))))
-  name)
-
 ;; OK now for real stuff.
 
 ;; `meaning` is the compilation or (as per the book) pretreatment
 ;; step. The idea is to create a lambda that, given the store
 ;; (activation records) and the continuation, will execute the
-;; program.
+;; program. While we're pretreating expressions, we maintain a lexical
+;; environment so we know where to look to dereference variables.
 
 ;; I'm finally going to cede to the book way of naming variables, in
 ;; particular environments 'r'. (Presumably r for \rho from chapter 5)
@@ -203,10 +185,21 @@
 
 
 ;; First tricky one: application. This makes us determine how
-;; procedures are represented. (As per book, I'll just use a closure)
+;; procedures are represented. (As per book, I'll just use a closure).
+;; NB the book has some static checks for native procedures in here;
+;; I've moved these to meaning-primitive-application.
 
 (define (meaning-application e e* r)
   (cond
+    ;; NB relies on the single-expression variety of cond clause
+    ((and (symbol? e)
+          (let ((kind (compute-kind r e)))
+            (and (pair? kind)
+                 (eq? 'predefined (car kind)))
+            ;; I've moved the arity checking into
+            ;; meaning-primitive-application, since we already have to
+            ;; do the description lookup there.
+            (meaning-primitive-application e e* r))))
     ((and (pair? e)
           (eq? 'lambda (car e)))
      (meaning-closed-application e e* r))
@@ -257,7 +250,7 @@
          (m+ (meaning-sequence body r2)))
     (lambda (sr k)
       (m* sr (lambda (v*)
-               (m+ (sr-extend* sr v*) k))))))         
+               (m+ (sr-extend* sr v*) k))))))
 
 ;; As the book says, because we know the number of arguments being
 ;; supplied, we can build the rest list as we go; essentially a
@@ -341,7 +334,8 @@
                  (lambda (sr k)
                    (let ((value (global-fetch i)))
                      (if (eq? value UNDEFINED)
-                         (runtime-error "variable not defined" n)))))))
+                         (runtime-error "variable not defined" n))))
+                 (lambda (sr k) (k (global-fetch i))))))
           ((predefined)
            (let* ((i (cdr kind))
                   (value (predef-fetch i)))
@@ -363,7 +357,7 @@
                            (k (:argument! sr j val)))))
                  (lambda (sr k)
                    (m sr (lambda (val)
-                           (k deep-update! sr i j val)))))))
+                           (k (deep-update! sr i j val))))))))
           ((global)
            (let ((i (cdr kind)))
              (lambda (sr k)
@@ -422,13 +416,138 @@
       ((null? n*) (meaning-fix-abstraction nn* e+ r))
       (else (meaning-dotted-abstraction (reverse regular) n* e+ r)))))
 
-;; Now for the repl
+;; === Now for the repl
 
+;; Initial env
 (define r.init '())
+;; Initial memory
 (define sr.init (make <activation> 0))
 
-(define g.current '())
-(define g.init '())
+;; Redefine or initialise a global variable (either predef'd or user).
+;; This ties the global environments earlier to our top-level
+;; environment and store.
+
+(define UNDEFINED '(constant . undefined))
+
+(define (g.current-init! name)
+  ;; I don't know why r.init is here, since it doesn't contain
+  ;; anything; possibly for generality, in case something does get
+  ;; added to it? I guess something has to go in that argument
+  ;; position, and if I change the rerpresentation of envs, r.init
+  ;; will change with it.
+  (let ((kind (compute-kind r.init name)))
+    (if kind
+        (case (car kind)
+          ((global)
+           (global-update! (cdr kind) UNDEFINED))
+          (else
+            (compiler-error "Bad redefinition" name kind)))
+        (let ((index (g.current-extend! name)))
+          (global-update! index UNDEFINED))))
+  name)
+
+(define (g.init-init! name value)
+  ;; As above, not sure why r.init is here
+  (let ((kind (compute-kind r.init name)))
+    (if kind
+        (case (car kind)
+          ((predefined)
+           (vector-set! sg.init (cdr kind) value))
+          (else (compiler-error "Bad redefinition" name kind)))
+        (let ((index (g.init-extend! name)))
+          (vector-set! sg.init index value))))
+  name)
+
+
+;; Primitives, definition of. The book has a separate environment for
+;; the definitions of primitives, used only during pretreatment when
+;; the name refers directly to the primitive.
+(define desc.init '())
+(define (description-extend! name description)
+  (set! desc.init (cons (cons name description) desc.init))
+  name)
+(define (get-description name)
+  (let ((d (assq name desc.init)))
+    (and (pair? d) (cdr d))))
+
+;; I.e., a predefined. This isn't actually given in the book
+(define (define-initial name value)
+  (g.init-init! name value))
+
+;; The book has here syntax, and below a (case ...) expression,
+;; testing the arity or number of arguments given, with an else clause
+;; resorting to regular application. This can only be an optimisation,
+;; for when the procedure is named and applied in the same place. So:
+;; the underlying procedure (just taking arguments) ends up in the
+;; description for static application; while the behaviour (taking an
+;; activation frame) ends up in the environment, for regular
+;; application. Note that I don't record a list of variables, just the
+;; arity.
+(define (define-primitive name underlying arity)
+
+  ;; Nicked from http://srfi.schemers.org/srfi-1/srfi-1-reference.scm
+  (define (take lis k)
+    (let recur ((lis lis) (k k))
+      (if (zero? k) '()
+          (cons (car lis)
+                (recur (cdr lis) (- k 1))))))
+  
+  (define-initial name
+    ;; not sure why it's a letrec in the book
+    (let* ((arity+1 (+ arity 1))
+           ;; behaviour is called with the activation record
+           (behaviour (lambda (v* k)
+                        (let* ((args (:args v*))
+                               (numargs (vector-length args))) 
+                          (if (= arity+1 numargs)
+                              (k (apply underlying
+                                        (take (vector->list args) arity)))
+                              (runtime-error "Wrong arity" arity numargs))))))
+      (description-extend! name `(function ,underlying ,arity))
+      behaviour)))
+
+;; Here is where my laziness above wrt arity makes things tricky;
+;; instead of having clauses for the different arities, I have to do a
+;; kind of CPS fold over the expressions.  I have moved some of the
+;; checking of the description here from meaning-application, to avoid
+;; getting the description twice. As in the book, if the expression is
+;; statically known to be predefined (which is why we're here), but
+;; the description is not present (um, why?), we fall through to
+;; regular application.
+(define (meaning-primitive-application e e* r)
+  (let ((desc (get-description e)))
+    (and desc
+         (eq? 'function (car desc))
+         (if (= (caddr desc) (length e*))
+             (let ((addr (cadr desc))
+                   (m*
+                    (let loop ((m* '())
+                               (e* e*))
+                      (if (null? e*)
+                          (reverse m*)
+                          (loop (cons (meaning (car e*) r) m*) (cdr e*))))))
+               ;; Now I have all the meanings, that is procedures that
+               ;; take an activation frame and a continuation, where
+               ;; the continuation takes a value.  I want to chain
+               ;; them together, making the continuation of the first
+               ;; call the second, and so on:
+               ;; (m1 sr (lambda (v1) (m2 sr (lambda (v2) ...))))
+               (if (null? m*)
+                   (lambda (sr k) (k (addr)))
+                   (lambda (sr k)
+                     (let loop ((vs '())
+                                (m* m*))
+                       (let ((m (car m*))
+                             (ms (cdr m*)))
+                         (if (null? ms)
+                             (m sr (lambda (v)
+                                     (k (apply addr (reverse (cons v vs))))))
+                             (m sr (lambda (v)
+                                     (loop (cons v vs) ms)))))))))
+             (compiler-error "Wrong arity for procedure" e
+                             "expected" (caddr desc)
+                             "given" (length e*))))))
+
 
 (define (repl)
   (define (toplevel)
