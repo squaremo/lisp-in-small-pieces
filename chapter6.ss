@@ -121,6 +121,7 @@
   (or (local-variable? r 0 n)
       (global-variable? g.current n)
       (global-variable? g.init n)))
+
 (define (global-variable? g n)
   (let ((var (assq n g)))
     (and (pair? var) (cdr var))))
@@ -227,11 +228,11 @@
         ((pair? n*)
          (if (pair? e*)
              (parse (cdr n*) (cdr e*) (cons (car n*) regular))
-             (compiler-error "Too few arguments" e ee*)))
+             (compiler-error "Too few arguments: need" e "got" ee*)))
         ((null? n*)
          (if (null? e*)
              (meaning-fix-closed-application nn* (cddr e) ee* r)
-             (compiler-error "Too many arguments" e ee*)))
+             (compiler-error "Too many arguments: need" e "got" ee*)))
         (else ;; augh, rest args in a let-ish form ..
           (meaning-dotted-closed-application
            (reverse regular) n* (cddr e) ee* r))))))
@@ -341,7 +342,7 @@
                   (value (predef-fetch i)))
              (lambda (sr k)
                (k value)))))
-        (compiler-error "No variable" n))))
+        (compiler-error "No such variable:" n))))
 
 (define (meaning-assignment n e r)
   (let ((m (meaning e r))
@@ -364,8 +365,8 @@
                (m sr (lambda (v)
                        (k (global-update! i v)))))))
           ((predefined)
-           (compiler-error "Assignment to immutable variable" n)))
-        (compiler-error "No variable" n))))
+           (compiler-error "Assignment to immutable variable:" n)))
+        (compiler-error "No such variable:" n))))
 
 ;; Lambdas
 
@@ -381,7 +382,9 @@
       (k (lambda (v* k1)
            (if (= (vector-length (:args v*)) arity+1)
                (m+ (sr-extend* sr v*) k1)
-               (runtime-error "Incorrect arity" arity)))))))
+               (runtime-error "Incorrect arity:" arity
+                              "; expected:"
+                              (vector-length (:args v*)))))))))
 
 (define (meaning-dotted-abstraction n* n e+ r)
   (let* ((arity (length n*))
@@ -393,7 +396,8 @@
            (if (>= (vector-length (:args v*)) arity+1)
                (begin (listify! v* arity)
                       (m+ (sr-extend* sr v*) k1))
-               (runtime-error "Insufficient args" v*)))))))
+               (runtime-error "Insufficient args:" v*
+                              "; expected: " arity)))))))
 
 ;; Takes rest args, conses them into a list, and pops them into the
 ;; magical extra activation frame slot. Interesting point from Tony:
@@ -433,7 +437,7 @@
   ;; I don't know why r.init is here, since it doesn't contain
   ;; anything; possibly for generality, in case something does get
   ;; added to it? I guess something has to go in that argument
-  ;; position, and if I change the rerpresentation of envs, r.init
+  ;; position, and if I change the representation of envs, r.init
   ;; will change with it.
   (let ((kind (compute-kind r.init name)))
     (if kind
@@ -461,7 +465,7 @@
 
 ;; Primitives, definition of. The book has a separate environment for
 ;; the definitions of primitives, used only during pretreatment when
-;; the name refers directly to the primitive.
+;; the name refers directly to the primitive (and so will I).
 (define desc.init '())
 (define (description-extend! name description)
   (set! desc.init (cons (cons name description) desc.init))
@@ -555,3 +559,7 @@
     ((meaning (read) r.init) sr.init display)(newline)
     (toplevel))
   (toplevel))
+
+;; Things to play with
+(define-primitive '+ + 2)
+(define-primitive '- - 2)
