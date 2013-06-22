@@ -70,7 +70,7 @@
                     `(local ,i . ,j)
                     (scan (cdr names) (+ j 1))))
                ((null? names)
-                (local-variable? (cdr r) (+ i 1)))
+                (local-variable? (cdr r) (+ i 1) n))
                ;; Don't think I understand this clause -- why would
                ;; these be improper? A convenience perhaps
                ((eq? n names) `(local ,i . ,j))))))
