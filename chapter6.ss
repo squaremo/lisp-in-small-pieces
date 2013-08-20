@@ -553,6 +553,7 @@
                              "given" (length e*))))))
 
 
+
 (define (repl)
   (define (toplevel)
     (display "> ")
@@ -563,3 +564,7 @@
 ;; Things to play with
 (define-primitive '+ + 2)
 (define-primitive '- - 2)
+
+;; The book doesn't go on to detail apply and call/cc until §6.3, by
+;; which time the interpreter has changed significantly. In the
+;; interests of moving on, I'll leave them aside too.
