@@ -726,3 +726,16 @@
     (display ((meaning (read) r.init #t)))(newline)
     (toplevel))
   (toplevel))
+
+(define-primitive '+ + 2)
+(define-primitive '- - 2)
+
+;; Exercise 6.2
+;;
+;; NB I invoke the result of `meaning`; the return value is a 'jump
+;; location' (a thunk, in this interpreter), but I want the value
+;; produced by running the code at the location, which is an
+;; object-level closure.
+(define-initial 'list ((meaning '(lambda args args) r.init #f)))
+
+;; Exercise 6.4 might be interesting to come back to ..
