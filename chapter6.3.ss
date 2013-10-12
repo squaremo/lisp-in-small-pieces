@@ -302,6 +302,17 @@
     (toplevel))
   (toplevel))
 
+;; For unattended execution. Read expressions from the current input
+;; port, and evaluate them until EOF is read.
+
+(define (eval-exprs)
+  (set! *env* sr.init)
+  (let ((in (read)))
+    (if (not (eq? in #!eof))
+        (begin
+          (display ((meaning in r.init #t)))(newline)
+          (eval-exprs)))))
+
 (define-primitive '+ + 2)
 (define-primitive '- - 2)
 

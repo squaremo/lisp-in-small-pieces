@@ -561,6 +561,13 @@
     (toplevel))
   (toplevel))
 
+(define (eval-exprs)
+  (let ((in (read)))
+    (if (not (eq? in #!eof))
+        (begin
+          ((meaning in r.init) sr.init display)(newline)
+          (eval-exprs)))))
+
 ;; Things to play with
 (define-primitive '+ + 2)
 (define-primitive '- - 2)

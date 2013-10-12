@@ -288,7 +288,7 @@
             (set! *val* (make <activation> arity+1))))))
 
 (define (ALLOCATE-DOTTED-FRAME arity)
-  (let ((arity+1 (+ size 1)))
+  (let ((arity+1 (+ arity 1)))
     (list (lambda ()
             (set! *val* (let ((v* (make <activation arity+1)))
                           (:argument! v* arity '())
@@ -328,6 +328,19 @@
 (define (compile+run expression)
   (set! *pc* (compile expression))
   (run))
+
+(define (repl)
+  (display "> ")
+  (let ((in (read)))
+    (display (compile+run in))(newline)
+    (repl)))
+
+(define (eval-exprs)
+  (let ((in (read)))
+    (if (not (eq? #!eof in))
+        (begin
+          (display (compile+run in))(newline)
+          (eval-exprs)))))
 
 (define (define-primitive name underlying arity)
   (let ((arity+1 (+ arity 1)))
