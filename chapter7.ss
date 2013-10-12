@@ -243,7 +243,7 @@
 
 (define (FIX-CLOSURE m+ arity)
   (define the-function
-    (append (ARITY=? (+ arity 1))
+    (append (ARITY=? arity)
             (EXTEND-ENV)
             m+
             (RETURN)))
