@@ -147,7 +147,7 @@
   (let ((arity+1 (+ arity 1)))
     (lambda ()
       (let ((v* (make <activation> arity+1)))
-        (:argument v* arity '())
+        (:argument! v* arity '())
         v*))))
 
 (define (CALL0 address)

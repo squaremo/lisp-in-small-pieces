@@ -405,7 +405,7 @@
 ;; or arguments apart just to put it back together, so it's worth
 ;; having a different entry point for `apply`. Extra for experts ..
 (define (listify! v* arity)
-  (let loop ((index (- (vector-length (:args v*)) 1))
+  (let loop ((index (- (:length v*) 1))
              (result '()))
     (if (= arity index)
         (:argument! v* arity result)

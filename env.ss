@@ -63,7 +63,7 @@
 ;; Helper that collects values after arity+1 and puts them in a list
 ;; in arity+1th argument slot. Used for dotted applications.
 (define (listify! v* arity)
-  (let loop ((index (- (vector-length (:args v*)) 1))
+  (let loop ((index (- (:length v*) 1))
              (result '()))
     (if (= arity index)
         (:argument! v* arity result)
