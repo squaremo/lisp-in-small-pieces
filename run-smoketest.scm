@@ -13,7 +13,15 @@
 ;; Actually, other than those imports, it's all R5RS I think.
 
 (define (main arguments)
+
   (load (cadr arguments))
+
   (with-input-from-port (open-input-file "test-exprs.scm")
-    eval-exprs)
+    (lambda ()
+      (define (eval-exprs)
+        (let ((in (read)))
+          (if (not (eq? #!eof in))
+              (begin (display (eval-expr in))(newline)
+                     (eval-exprs)))))
+      (eval-exprs)))
   0)

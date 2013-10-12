@@ -335,12 +335,8 @@
     (display (compile+run in))(newline)
     (repl)))
 
-(define (eval-exprs)
-  (let ((in (read)))
-    (if (not (eq? #!eof in))
-        (begin
-          (display (compile+run in))(newline)
-          (eval-exprs)))))
+;; For smoketest
+(define eval-expr compile+run)
 
 (define (define-primitive name underlying arity)
   (let ((arity+1 (+ arity 1)))

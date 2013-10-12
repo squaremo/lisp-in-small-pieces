@@ -561,12 +561,10 @@
     (toplevel))
   (toplevel))
 
-(define (eval-exprs)
-  (let ((in (read)))
-    (if (not (eq? in #!eof))
-        (begin
-          ((meaning in r.init) sr.init display)(newline)
-          (eval-exprs)))))
+;; For the smoketest
+(define (eval-expr e)
+  (call/cc (lambda (k)
+             ((meaning e r.init) sr.init k))))
 
 ;; Things to play with
 (define-primitive '+ + 2)
