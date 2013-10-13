@@ -461,3 +461,29 @@
                    (set! *pc* (stack-pop)))
                   (else (loop (- index 1)
                               (cons (:argument *val* index) result))))))))
+
+(define (save-stack)
+  *stack*)
+
+(define-initial 'call/cc
+  (make <primitive>
+        (lambda ()
+          (if (= (:length *val*) 2)
+              (let* ((f (:argument *val* 0))
+                     (s (save-stack))
+                     (k (lambda ()
+                          (if (= (:length *val*) 2)
+                              (begin
+                                (set! *val* (:argument *val* 0))
+                                (set! *stack* s)
+                                (set! *pc* (stack-pop)))
+                              (runtime-error
+                               "Expected one argument to continuation;"
+                               "got " (- (:length *val*) 1)))))
+                     (frame (make <activation> 2)))
+                (:argument! frame 0 (make <primitive> k))
+                (set! *val* frame)
+                (set! *fun* f) ;; debug purposes
+                (invoke f))
+              (runtime-error "Expected one argument, got "
+                             (- (:length *val*) 1))))))

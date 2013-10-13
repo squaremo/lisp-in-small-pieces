@@ -17,3 +17,6 @@
 
 "list and apply"
 (apply + (list 3 4))
+
+"call/cc"
+(+ 4 (call/cc (lambda (k) (k 4))))
