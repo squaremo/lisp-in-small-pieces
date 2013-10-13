@@ -290,7 +290,7 @@
 (define (ALLOCATE-DOTTED-FRAME arity)
   (let ((arity+1 (+ arity 1)))
     (list (lambda ()
-            (set! *val* (let ((v* (make <activation arity+1)))
+            (set! *val* (let ((v* (make <activation> arity+1)))
                           (:argument! v* arity '())
                           v*))))))
 
@@ -305,7 +305,6 @@
     (list (lambda () (if (not (= (:length *val*) arity+1))
                          (runtime-error "Wrong number of arguments"
                                         n (- (:length *val*) 1)))))))
-
 
 ;; That's the combinators, now linearising to a list of thunks
 ;; operating on registers and a stack. The pretreatment remains the
@@ -338,53 +337,127 @@
 ;; For smoketest
 (define eval-expr compile+run)
 
+
+;; The book uses a class for primitives, because they don't have a
+;; closed-over environment
+
+(define-generics :address :address!)
+
+(define-class (<primitive>)
+  (address :address :address!))
+
+(define-method (initialize (<primitive> self)
+                           (<procedure> address))
+  (:address! self address))
+
+(define-method (invoke (<primitive> f))
+  (stack-push *pc*)
+  ((:address f)))
+
 (define (define-primitive name underlying arity)
   (let ((arity+1 (+ arity 1)))
     (case arity
       ((0)
        (define-initial name
          (let ((behaviour
-                (append
-                 (ARITY=? arity)
-                 (INVOKE0 underlying))))
+                (lambda ()
+                  (if (= (:length *val*) arity+1)
+                      (begin
+                        (set! *val* (underlying))
+                        (set! *pc* (stack-pop)))
+                      (runtime-error
+                       "Incorrect arity for" name
+                       "need:" arity
+                       "got: " (- (:length *val*) 1))))))
            (description-extend!
             name `(function ,underlying ,arity))
-           (make <closure> behaviour sr.init))))
+           (make <primitive> behaviour))))
       ((1)
        (define-initial name
          (let ((behaviour
-                (append
-                 (ARITY=? arity)
-                 (list (lambda ()
-                         (set! *val*
-                           (underlying (:argument *val* 0))))))))
+                (lambda ()
+                  (if (= (:length *val*) arity+1)
+                      (begin
+                        (set! *val* (underlying (:argument *val* 0)))
+                        (set! *pc* (stack-pop)))
+                      (runtime-error
+                       "Incorrect arity for" name
+                       "need:" arity
+                       "got: " (- (:length *val*) 1))))))
            (description-extend!
             name `(function ,underlying ,arity))
-           (make <closure> behaviour sr.init))))
+           (make <primitive> behaviour))))
       ((2)
        (define-initial name
          (let ((behaviour
-                (append
-                 (ARITY=? arity)
-                 (list (lambda ()
-                         (set! *val*
-                           (underlying (:argument *val* 0)
-                                       (:argument *val* 1))))))))
+                (lambda ()
+                  (if (= (:length *val*) arity+1)
+                      (begin
+                        (set! *val*
+                          (underlying (:argument *val* 0)
+                                      (:argument *val* 1)))
+                        (set! *pc* (stack-pop)))
+                      (runtime-error
+                       "Incorrect arity for" name
+                       "need:" arity
+                       "got: " (- (:length *val*) 1))))))
            (description-extend!
             name `(function ,underlying ,arity))
-           (make <closure> behaviour sr.init))))
+           (make <primitive> behaviour))))
       ((3)
        (define-initial name
          (let ((behaviour
-                (append
-                 (ARITY=? arity)
-                 (list (lambda ()
-                         (set! *val*
-                           (underlying (:argument *val* 0)
-                                       (:argument *val* 1)
-                                       (:argument *val* 2))))))))
+                (lambda ()
+                  (if (= (:length *val*) arity+1)
+                      (set! *val*
+                        (underlying (:argument *val* 0)
+                                    (:argument *val* 1)
+                                    (:argument *val* 2)))
+                      (runtime-error
+                       "Incorrect arity for" name
+                       "need:" arity
+                       "got: " (- (:length *val*) 1))))))
            (description-extend!
             name `(function ,underlying ,arity))
-           (make <closure> behaviour sr.init)))))))
+           (make <primitive> behaviour)))))))
 
 (define-primitive '+ + 2)
+
+(define-initial 'apply
+  (let ((arity 2) (arity+1 3))
+    (make <primitive>
+          (lambda ()
+            (if (>= (:length *val*) arity+1)
+                (let* ((f (:argument *val* 0)) ;; the function
+                       (last-arg-index (- (:length *val*) 2))
+                       (last-arg (:argument *val* last-arg-index))
+                       (size (+ last-arg-index (length last-arg)))
+                       (frame (make <activation> size)))
+                  (do ((i 1 (+ i 1)))
+                      ((= i last-arg-index))
+                    (:argument! frame (- i 1) (:argument v* i)))
+                  (do ((i (- last-arg-index 1) (+ i 1))
+                       (last-arg last-arg (cdr last-arg)))
+                      ((null? last-arg))
+                    (:argument! frame i (car last-arg)))
+                  (set! *val* frame)
+                  (set! *fun* f) ;; not strictly necessary, but
+                  ;; useful if we e.g., examine the
+                  ;; registers while debugging (trick
+                  ;; taken from the book code)
+                  (invoke f))
+                (runtime-error
+                 "Incorrect arity for" name
+                 "need at least:" arity
+                 "got: " (- (:length *val*) 1)))))))
+
+(define-initial 'list
+  (make <primitive>
+        (lambda ()
+          (let loop ((index (- (:length *val*) 2))
+                     (result '()))
+            (cond ((= index -1)
+                   (set! *val* result)
+                   (set! *pc* (stack-pop)))
+                  (else (loop (- index 1)
+                              (cons (:argument *val* index) result))))))))

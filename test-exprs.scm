@@ -11,3 +11,9 @@
 
 "dotted let, built-in as value, and apply"
 ((lambda (f . args) (apply f args)) + 2 3)
+
+"list primitive"
+(list 1 2 3)
+
+"list and apply"
+(apply + (list 3 4))
