@@ -1,7 +1,7 @@
 ;; This is a compiler, adapted from the "pretreating" interpreter of
 ;; the previous chapter. It takes the conversion to combinators a step
-;; further by serialising them to a byte code, introducing a few
-;; conveniences along the way, and writing a byte code interpreter.
+;; further by linearising them into lists of thunks operating entirely
+;; on registers and the stack.
 
 (load "prelude.ss")
 (load "env.ss")
@@ -27,6 +27,14 @@
   (let ((v (car *stack*)))
     (set! *stack* (cdr *stack*))
     v))
+
+;; Using a list makes this a lot easier. Effectively, I'm using an
+;; entirely heap-allocated er, stack.
+(define (stack-save)
+  *stack*)
+
+(define (stack-restore s)
+  (set! *stack* s))
 
 ;; When calling a function, we need to store the head as well as the
 ;; arguments, so here's another register for that.
@@ -462,20 +470,17 @@
                   (else (loop (- index 1)
                               (cons (:argument *val* index) result))))))))
 
-(define (save-stack)
-  *stack*)
-
 (define-initial 'call/cc
   (make <primitive>
         (lambda ()
           (if (= (:length *val*) 2)
               (let* ((f (:argument *val* 0))
-                     (s (save-stack))
+                     (s (stack-save))
                      (k (lambda ()
                           (if (= (:length *val*) 2)
                               (begin
                                 (set! *val* (:argument *val* 0))
-                                (set! *stack* s)
+                                (stack-restore s)
                                 (set! *pc* (stack-pop)))
                               (runtime-error
                                "Expected one argument to continuation;"
