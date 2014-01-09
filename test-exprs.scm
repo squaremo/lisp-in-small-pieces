@@ -20,3 +20,9 @@
 
 "call/cc"
 (+ 4 (call/cc (lambda (k) (k 4))))
+
+"nested let with call/cc"
+((lambda (a p b)
+   ((lambda (c)
+      (p (call/cc c) b))
+    (lambda (k) (k a)))) 1 + 2)
