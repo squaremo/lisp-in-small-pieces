@@ -10,6 +10,8 @@
 ;; runtime. The only representations of memory kept in this
 ;; interpreter are the activation records and the memory for globals.
 
+(load "prelude.ss")
+
 (define (compiler-error . bobbins)
   (error bobbins))
 

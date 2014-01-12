@@ -341,8 +341,9 @@
 (define-method (initialize (<closure> self)
                            (<list> code)
                            (<activation> closed))
-  (:code! self code)
-  (:closed-env! self closed))
+  (init* self 
+         :code! code
+         :closed-env! closed))
 
 (define-method (invoke (<closure> f) (<boolean> tail?))
   (unless tail? (stack-push *pc*))

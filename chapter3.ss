@@ -6,6 +6,8 @@
 ;; Roughly equivalent to CLOS (based on tinyclos?)
 ;; http://sisc-scheme.org/manual/html/ch07.html#GenericProcedures
 
+(load "prelude.ss")
+
 (import type-system)
 (import generic-procedures)
 (import oo)
