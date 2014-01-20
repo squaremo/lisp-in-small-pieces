@@ -742,9 +742,25 @@
 (define-method (evaluate (<constant> e) (<list> sr))
   (:value e))
 
+(define-method (evaluate (<regular-application> e)
+                         (<list> sr))
+  (let ((f (evaluate (:function e) sr))
+        (args (evaluate (:arguments e) sr)))
+    (invoke f args)))
+
+(define-method (evaluate (<predefined-application> e)
+                         (<list> sr))
+  (let ((f (cdr (assq (:variable e) sr)))
+        (args (evaluate (:arguments e) sr)))
+    (invoke f args)))
+
+(define-method (evaluate (<fix-let> e) (<list> sr))
+  (let ((args (evaluate (:arguments e) sr)))
+    (evaluate (:body e) (sr-regular-extend* sr (:variables e) args))))
+
 (define-method (evaluate (<arguments> e) (<list> sr))
   (cons (evaluate (:first e) sr)
-        (evaluate (:last e) sr)))
+        (evaluate (:others e) sr)))
 
 (define-method (evaluate (<no-argument> e) (<list> sr))
   '())
@@ -839,6 +855,24 @@
 ;(defprimitive display show 1)
 (defprimitive newline newline 0)
 
+;; Some procedures for showing things more compactly
+
+(define-generics show)
+(define-method (show (<constant> v))
+  (string-append "<constant " (show (:value v)) ">"))
+
+(define-method (show (<number> n)) (number->string n))
+(define-method (show (<string> s)) (string-append "\"" s "\""))
+(define-method (show (<boolean> b)) (if b "#t" "#f"))
+
+(define-method (show (<predefined-application> a))
+  (string-append "(<predefined " (symbol->string (:name (:variable a))) ">"
+                 (show (:arguments a)) ")"))
+
+(define-method (show (<arguments> a))
+  (string-append " " (show (:first a)) (show (:others a))))
+(define-method (show (<no-argument> _)) "")
+
 ;; Finally, a REPL
 
 (define (repl)
@@ -847,5 +881,5 @@
   (display "> ")
   (let ((in (read))
         (eval (:eval (create-evaluator #f))))
-    (display (eval in))(nl)
+    (display (eval in))(newline)
     (repl)))
