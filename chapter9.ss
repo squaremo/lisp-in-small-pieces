@@ -139,7 +139,7 @@
   (function :function :function!)
   (arguments :arguments :arguments!))
 (define-method (initialize (<regular-application> self)
-                           (<function> function)
+                           (<program> function)
                            (<arguments> arguments))
   (init* self :function! function :arguments! arguments))
 
@@ -636,7 +636,7 @@
               (sr-extend (sr-extend* sr (cdr variables) (cdr values))
                          (car variables) (car values))
               (evaluate-error "Not enough values" variables)))
-      (if (null? vlaues)
+      (if (null? values)
           sr
           (evaluate-error "Too many values" values))))
 
@@ -857,6 +857,23 @@
 ;(defprimitive display show 1)
 (defprimitive newline newline 0)
 
+(defprimitive list (lambda args args) >=0)
+
+(defprimitive apply
+  (lambda (f . args)
+    (if (pair? args)
+        (invoke f (let flat ((args args))
+                    (if (null? (cdr args)) (car args)
+                        (cons (car args) (flat (cdr args))))))
+        (evaluate-error "Incorrect arity" 'apply)))
+  >=2)
+
+(defprimitive call/cc
+  (lambda (f)
+    (call/cc (lambda (k)
+               (invoke f (list (make <runtime-primitive> k = 1))))))
+  1)
+
 ;; Some procedures for showing things more compactly
 
 (define-generics show)
@@ -915,3 +932,7 @@
         (eval (:eval (create-evaluator #f))))
     (display (eval in))(newline)
     (repl)))
+
+;; Hook for tests
+(define (eval-expr e)
+  ((:eval (create-evaluator #f)) e))
