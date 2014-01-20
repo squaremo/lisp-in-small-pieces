@@ -166,9 +166,11 @@
   (arguments :arguments :arguments!)
   (body :body :body!))
 (define-method (initialize (<fix-let> self)
+                           (<list> variables)
                            (<arguments> arguments)
                            (<program> body))
-  (init* self :arguments! arguments :body! body))
+  (init* self :variables! variables
+         :arguments! arguments :body! body))
 
 (define-generics :comparator :comparator!
   :arity :arity! :generator :generator!)
@@ -272,13 +274,13 @@
 (define (last-pair l)
   (if (pair? l)
       (if (pair? (cdr l))
-          (last-pair l)
+          (last-pair (cdr l))
           l)
       (error "This isn't even a pair.")))
 
 (define (process-nary-closed-application f e*)
   (let* ((v* (:variables f))
-         (f (:body f))
+         (b (:body f))
          (o (make <fix-let>
               v*
               (let gather ((e* e*) (v* v*))
@@ -418,7 +420,7 @@
 (define special-lambda
   (make <magic-keyword>
     'lambda (lambda (e r)
-              (objectify-function (cadr e) (caddr e) r))))
+              (objectify-function (cadr e) (cddr e) r))))
 
 (define *special-form-keywords*
   (list special-quote
@@ -676,7 +678,7 @@
 (define-method (initialize (<runtime-procedure> self)
                            (<program> body)
                            (<list> variables)
-                           (<environment> environment))
+                           (<list> environment))
   (init* self :body! body :variables! variables :environment! environment))
 
 (define-method (invoke (<runtime-procedure> f)
@@ -864,14 +866,44 @@
 (define-method (show (<number> n)) (number->string n))
 (define-method (show (<string> s)) (string-append "\"" s "\""))
 (define-method (show (<boolean> b)) (if b "#t" "#f"))
+(define-method (show (<symbol> s)) (symbol->string s))
 
 (define-method (show (<predefined-application> a))
-  (string-append "(<predefined " (symbol->string (:name (:variable a))) ">"
+  (string-append "(" (show (:variable a))
                  (show (:arguments a)) ")"))
+
+(define-method (show (<predefined-reference> p))
+  (show (:variable p)))
+(define-method (show (<predefined-variable> p))
+  (symbol->string (:name p)))
 
 (define-method (show (<arguments> a))
   (string-append " " (show (:first a)) (show (:others a))))
 (define-method (show (<no-argument> _)) "")
+
+(define-method (show (<fix-let> l))
+  (string-append
+   "(let "
+   (let loop ((vars (:variables l))
+              (args (:arguments l))
+              (str "("))
+     (if (pair? vars)
+         (loop
+          (cdr vars) (:others args)
+          (string-append str
+                         "(" (symbol->string (:name (car vars)))
+                         " " (show (:first args)) ")"))
+         str)) ") "
+   (show (:body l)) ")"))
+
+(define-method (show (<local-variable> v))
+  (string-append "<local " (symbol->string (:name v)) ">"))
+
+(define-method (show (<local-reference> r))
+  (show (:variable r)))
+
+(define-method (show (<sequence> s))
+  (string-append (show (:first s)) (show (:last s))))
 
 ;; Finally, a REPL
 
