@@ -71,3 +71,70 @@
 
 ;; Here's the canonical example of a walker:
 (define (identity p) (walk identity p))
+
+;; === Using boxes for mutable variables
+
+(define-generics insert-boxes)
+
+(define-method (insert-boxes (<program> p))
+  (walk insert-boxes p))
+
+;; A few more classes to represent box reads, writes, and the creation
+;; of boxes.
+(define-class (<box-read> <program>)
+  (reference :reference :reference!))
+(define-method (initialize (<box-read> self)
+                           (<reference> ref))
+  (init* self :reference! ref))
+(define-method (visit (<box-read> read)
+                      (<procedure> fun))
+  (make <box-read> (fun (:reference read))))
+
+(define-class (<box-write> <program>)
+  (reference :reference :reference!)
+  (form :form :form!))
+(define-method (initialize (<box-write> self)
+                           (<reference> ref)
+                           (<program> form))
+  (init* self :reference! ref :form! form))
+(define-method (visit (<box-write> write)
+                      (<procedure> fun))
+  (make <box-write> (fun (:reference write))
+        (fun (:form write))))
+
+(define-class (<box-creation> <program>)
+  (variable :variable :variable!))
+(define-method (initialize (<box-creation> self)
+                           (<variable> var))
+  (init* self :variable! var))
+
+;; And now for the specialisations that we care about:
+(define-method (insert-boxes (<local-reference> ref))
+  (if (:mutable? (:variable ref))
+      (make <box-read> ref)
+      ref))
+
+;; Rewrite assignments to locals as box-writes. Note that I don't use
+;; walk, because I'm recursing on a field; that's going to be the case
+;; in general.
+(define-method (insert-boxes (<local-assignment> set))
+  (make <box-write> (:reference set) (insert-boxes (:form set))))
+
+(define-method (insert-boxes (<function> f))
+  (let ((body (boxify-mutable-variables (:body f)
+                                        (:variables f))))
+    (make <function> (:variables f) body)))
+
+(define-method (insert-boxes (<fix-let> f))
+  (let ((body (boxify-mutable-variables (:body f)
+                                        (:variables f)))
+        (args (insert-boxes (:arguments f))))
+    (make <fix-let> args body)))
+
+(define (boxify-mutable-variables body vars)
+  (if (pair? vars)
+      (if (:mutable? (car vars))
+          (boxify-mutable-variables
+           (make <sequence> (make <box-creation> (car vars)) body))
+          (boxify-mutable-variables body (cdr vars)))
+      body))
