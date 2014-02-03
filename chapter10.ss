@@ -18,7 +18,7 @@
 ;; sub-sub-programs might be) then each program-like field will be
 ;; examined.
 
-(define (walk program fun . args)
+(define (walk fun program . args)
   (visit program (if (null? args)
                      fun
                      (lambda (p) (apply fun p args)))))
@@ -70,5 +70,4 @@
         (fun (:body fix))))
 
 ;; Here's the canonical example of a walker:
-(define (identity p) (walk p identity))
-
+(define (identity p) (walk identity p))
