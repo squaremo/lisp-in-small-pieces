@@ -1,7 +1,8 @@
 ;; This compiler supports macros, by doing lexical analysis to convert
 ;; a program to objects (called 'Objectification' in the book). Macros
 ;; are expanded during this process. The result can then be
-;; interpreted, compiled, disassembled, or whatever.
+;; interpreted, compiled, disassembled, or whatever. The REPL given,
+;; and the test hook, use the hosted eval.
 
 (load "prelude.ss")
 (import type-system)
@@ -40,6 +41,7 @@
 ;; Abstract class representing an executable expression
 (define-class (<program>))
 
+;; A variable used to refer to a value
 (define-class (<reference> <program>)
   (variable :variable :variable!))
 (define-method (initialize (<reference> self)
@@ -58,10 +60,14 @@
                            (<boolean> dotted))
   (init* self :name! name :mutable! mutable :dotted! dotted))
 
+;; I could restrict these to the appropriate variable types, but meh.
 (define-class (<local-reference> <reference>))
 (define-class (<global-reference> <reference>))
 (define-class (<predefined-reference> <reference>))
 
+
+;; Global assignments use variables, local assignments use
+;; references. Not totally sure why.
 (define-generics :form :form!)
 (define-class (<global-assignment> <program>)
   (variable :variable :variable!)
@@ -123,16 +129,21 @@
 ;; Abstract
 (define-class (<application> <program>))
 
+;; Abstract superclass for arguments, so we can be more specific than
+;; <program> in applications.
+(define-class (<arguments> <program>))
+
 (define-generics :others :others!)
-(define-class (<arguments> <program>)
+
+(define-class (<some-arguments> <arguments>)
   (first :first :first!)
   (others :others :others!))
-(define-method (initialize (<arguments> self)
+(define-method (initialize (<some-arguments> self)
                            (<program> first)
-                           (<program> others))
+                           (<arguments> others))
   (init* self :first! first :others! others))
 
-(define-class (<no-argument> <program>))
+(define-class (<no-argument> <arguments>))
 
 (define-generics :function :function! :arguments :arguments!)
 (define-class (<regular-application> <application>)
@@ -260,14 +271,14 @@
 
 (define (->arguments e*)
   (if (pair? e*)
-      (make <arguments> (car e*) (->arguments (cdr e*)))
+      (make <some-arguments> (car e*) (->arguments (cdr e*)))
       (make <no-argument>)))
 
 (define-generics number-of)
 
 (define-method (number-of (<no-argument> a))
   0)
-(define-method (number-of (<arguments> a))
+(define-method (number-of (<some-arguments> a))
   (+ 1 (number-of (:others a))))
 
 
@@ -285,22 +296,22 @@
               v*
               (let gather ((e* e*) (v* v*))
                 (if (:dotted? (car v*))
-                    (make <arguments>
+                    (make <some-arguments>
                       (let pack ((e* e*))
-                        (if (instance-of? e* <arguments>)
+                        (if (instance-of? e* <some-arguments>)
                             ;; here we are making some code that will
                             ;; construct the varargs list
                             (make <predefined-application>
                               (find-variable? 'cons g.predef)
-                              (make <arguments> (:first e*)
-                                    (make <arguments> (pack (:others e*))
+                              (make <some-arguments> (:first e*)
+                                    (make <some-arguments> (pack (:others e*))
                                           (make <no-argument>))))
                             ;; I think this assumes e* is <no-argument>
                             (make <constant> '())))
                       (make <no-argument>))
                     ;; not dotted
-                    (if (instance-of? e* <arguments>)
-                        (make <arguments>
+                    (if (instance-of? e* <some-arguments>)
+                        (make <some-arguments>
                           (:first e*)
                           (gather (:others e*)
                                   (cdr v*)))
@@ -760,7 +771,7 @@
   (let ((args (evaluate (:arguments e) sr)))
     (evaluate (:body e) (sr-regular-extend* sr (:variables e) args))))
 
-(define-method (evaluate (<arguments> e) (<list> sr))
+(define-method (evaluate (<some-arguments> e) (<list> sr))
   (cons (evaluate (:first e) sr)
         (evaluate (:others e) sr)))
 
@@ -894,7 +905,7 @@
 (define-method (show (<predefined-variable> p))
   (symbol->string (:name p)))
 
-(define-method (show (<arguments> a))
+(define-method (show (<some-arguments> a))
   (string-append " " (show (:first a)) (show (:others a))))
 (define-method (show (<no-argument> _)) "")
 

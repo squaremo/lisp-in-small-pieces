@@ -9,6 +9,12 @@
 "abstraction and application"
 ((lambda (f) (f 2 2)) (lambda (x y) (+ x y)))
 
+"thunk let"
+((lambda () (+ 1 2)))
+
+"thunk application"
+((lambda (f) (f)) (lambda () (+ 2 3)))
+
 "dotted let, built-in as value, and apply"
 ((lambda (f . args) (apply f args)) + 2 3)
 
