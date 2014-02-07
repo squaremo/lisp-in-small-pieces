@@ -1,17 +1,31 @@
-;; Procedures to show the various states of transformation
+;; Procedures to show the various states of transformation.  This
+;; covers the classes given in chapter9.ss; it is extended in
+;; chapter10.ss
 
+(define (show v)
+  (cond ((or (instance-of? v <symbol>)
+             (instance-of? v <number>)
+             (instance-of? v <boolean>)
+             (instance-of? v <string>)
+             (instance-of? v <char>)
+             (instance-of? v <procedure>))
+         v)
+        ((list? v)
+         (map show v))
+        ((vector? v)
+         (vector-map show v))
+        (else
+         (show-class-value v))))
+
+(define (show-class-value v)
+  (let ((c (type-of v)))
+    `(,(class-name c)
+      ,@(map (lambda (s) (show-class-slot s v)) (class-direct-slots c)))))
+
+(define (show-class-slot s v)
+  `(,(slot-name s) ,(show ((slot-accessor s) v))))
 
 (define-generics ->sexpr)
-
-(define-macro (-> value . rest)
-  (cond
-   ((null? rest)
-    value)
-   ((pair? rest)
-    (let ((next (car rest)))
-      (if (pair? next)
-          `(-> (,(car next) ,value ,@(cdr next)) ,@(cdr rest))
-          `(-> (,next ,value) ,@(cdr rest)))))))
 
 (define-methods ->sexpr
   ;; Sometimes we're in an implicit list-of-expressions and we want to
@@ -21,7 +35,8 @@
 
   ([(<constant> c)] (:value c))
   ([(<variable> v)] (:name v))
-  ([(<local-reference> r)] (-> r :variable :name))
+  ([(<local-reference> r)] (-> r :variable ->sexpr))
+  ([(<global-reference> r)] (-> r :variable ->sexpr))
   ([(<predefined-application> a)]
    `(,(-> a :variable :name) ,@(->sexpr (:arguments a))))
   ([(<predefined-reference> r)] (-> r :variable :name))
@@ -48,5 +63,4 @@
    `(if ,(->sexpr (:condition a))
         ,(->sexpr (:consequent a))
         ,(->sexpr (:alternant a))))
-     
 )

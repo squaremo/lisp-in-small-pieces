@@ -3,6 +3,7 @@
 ;; C.
 
 (load "chapter9.ss")
+(load "show.ss")
 
 ;; We start by making a code walker: it'll visit each subprogram and
 ;; thereby construct a new program.
@@ -10,14 +11,18 @@
 
 ;; I'm going to take a slightly different route to the book, by
 ;;  1. using a generic procedure to pick the fields to visit, rather
-;;  than reflection
+;;  than reflection; this requires a (fairly simple) implementation of
+;;  the procedure for each class;
 ;;  2. constructing a new tree rather than setting fields
 ;;
 ;; The supplied procedure gets to see each subprogram first; if it
 ;; chooses to walk the subprogram (i.e., it's not of interest, but
 ;; sub-sub-programs might be) then each program-like field will be
 ;; examined.
-
+;;
+;; As we'll see, the supplied procedure will *also* be a generic
+;; procedure, with a default implementation that just calls walk, and
+;; specialised implementations that recurse into fields explicitly.
 (define (walk fun program . args)
   (visit program (if (null? args)
                      fun
@@ -70,7 +75,8 @@
         (fun (:body fix))))
 
 ;; Here's the canonical example of a walker:
-(define (identity p) (walk identity p))
+(define-generics identity)
+(define-method (identity (<program> p)) (walk identity p))
 
 ;; === Using boxes for mutable variables
 
@@ -89,6 +95,8 @@
 (define-method (visit (<box-read> read)
                       (<procedure> fun))
   (make <box-read> (fun (:reference read))))
+(define-method (->sexpr (<box-read> r))
+  (->sexpr (:reference r)))
 
 (define-class (<box-write> <program>)
   (reference :reference :reference!)
@@ -101,12 +109,16 @@
                       (<procedure> fun))
   (make <box-write> (fun (:reference write))
         (fun (:form write))))
+(define-method (->sexpr (<box-write> w))
+  `(set! ,(->sexpr (:reference w))
+         ,(->sexpr (:form w))))
 
 (define-class (<box-creation> <program>)
   (variable :variable :variable!))
 (define-method (initialize (<box-creation> self)
                            (<variable> var))
   (init* self :variable! var))
+(define-method (->sexpr (<box-creation> c)) '())
 
 ;; And now for the specialisations that we care about:
 (define-method (insert-boxes (<local-reference> ref))
@@ -168,7 +180,9 @@
                       (<procedure> fun))
   (make <flat-function> (:variables f)
         (fun (:body f)) (fun (:free f))))
-
+(define-method (->sexpr (<flat-function> f))
+  `(lambda ,(map ->sexpr (append (:variables f) (:free f)))
+     ,(->sexpr (:body f))))
 
 (define-class (<some-free> <free-environment>)
   (first :first :first!)
@@ -180,8 +194,11 @@
 (define-method (visit (<some-free> env)
                       (<procedure> fun))
   (make <some-free> (fun (:first env)) (fun (:others env))))
+(define-method (->sexpr (<some-free> f))
+  (cons (->sexpr (:first f)) (->sexpr (:others f))))
 
 (define-class (<no-free> <free-environment>))
+(define-method (->sexpr (<no-free> nf)) '())
 
 (define-class (<free-reference> <reference>))
 
@@ -259,6 +276,12 @@
                       (<procedure> fun))
   (make <flat-program> (:quotes flat)
         (map fun (:definitions flat))))
+(define-method (->sexpr (<flat-program> p))
+  (append (map (lambda (q) `(define ,(quotation-name (:name q))
+                              ,(:value q))) (:quotations p))
+          (map (lambda (f) `(define ,(function-def-name (:index f))
+                              ,(->sexpr f))) (:definitions p))
+          (list (->sexpr (:form p)))))
 
 ;; NB uses the `name` slot to store the index
 (define-class (<quotation-variable> <variable>)
@@ -267,6 +290,11 @@
                            (<number> index)
                            (<value> value))
   (init* self :name! index :value! value))
+(define-method (->sexpr (<quotation-variable> c))
+  (quotation-name (:name c)))
+
+(define (quotation-name index)
+  (string->symbol (string-append "constant_" (number->string index))))
 
 ;; An extracted, lifted lambda. NB 'free' is *not* a free environment
 ;; here, but merely a list of variables free in the body.
@@ -284,6 +312,9 @@
   (make <function-definition>
     (:variables def) (fun (:body def)) (:free def) (:index def)))
 
+(define (function-def-name index)
+  (string->symbol (string-append "func_" (number->string index))))
+
 ;; This will now stand in for abstractions that have been lifted; now
 ;; we inherit the free var environment from the flat-function, but
 ;; refer to the function definition.
@@ -300,6 +331,10 @@
                       (<procedure> fun))
   (make <closure-creation> (:index c) (:variables c)
         (fun (:free c))))
+(define-method (->sexpr (<closure-creation> cc))
+  `(lambda ,(->sexpr (:free cc))
+     (,(function-def-name (:index cc))
+      ,(append (map ->sexpr (:variables cc)) (->sexpr (:free cc))))))
 
 ;; Now the entry point. Again, this uses mutation on something created
 ;; for the transformation. The reason is similar to above, we need to
@@ -357,3 +392,114 @@
               (make <closure-creation> index '() (make <no-free>))
               (make <no-argument>)))
     top))
+
+;; === Collect temporaries
+
+;; We want to convert fix-let forms into blocks with local variables;
+;; but C does not have nested local scopes, so we have to rename any
+;; variables that would otherwise conflict.
+
+(define-generics :temporaries :temporaries!)
+(define-class (<with-temp-function-definition> <function-definition>)
+  (temporaries :temporaries :temporaries!))
+(define-method (initialize (<with-temp-function-definition> self)
+                           (<list> vars)
+                           (<program> body)
+                           (<list> free)
+                           (<number> index)
+                           (<list> temporaries))
+  (init* self
+         :variables! vars :body! body
+         :free! free :index! index
+         :temporaries! temporaries))
+;; visit already covered by <function-definition>
+
+(define (gather-temporaries p)
+  (make <flat-program>
+    ;; form quotes defs
+    (:form p) (:quotations p)
+    (map (lambda (def)
+           (let ((withtemp (make <with-temp-function-definition>
+                             (:variables def)
+                             (:body def)
+                             (:free def)
+                             (:index def)
+                             '())))
+             (collect-temporaries withtemp withtemp '())))
+         (:definitions p))))
+
+(define-generics collect-temporaries)
+(define-method (collect-temporaries (<program> p)
+                                    (<with-temp-function-definition> f)
+                                    (<list> r))
+  (walk collect-temporaries p f r))
+
+;; We're going to build up a list of variables to renamed variables,
+;; so here we'll replace anything we know about with the renamed
+;; version
+(define-method (collect-temporaries (<local-reference> ref)
+                                    (<with-temp-function-definition> f)
+                                    (<list> r))
+  (let* ((var (:variable ref))
+         (v (assq var r)))
+    (if (pair? v) (make <local-reference> (cdr v)) ref)))
+
+;; Box read and writes include the reference, so will be rewritten as
+;; above. But box creation just refers to the variable, so we need to
+;; rewrite that if it's named.
+(define-method (collect-temporaries (<box-creation> box)
+                                    (<with-temp-function-definition> f)
+                                    (<list> r))
+  (let* ((var (:variable box))
+         (v (assq var r)))
+    (if (pair? v) (make <box-creation> (cdr v)) box)))
+
+(define-method (collect-temporaries (<fix-let> fix)
+                                    (<with-temp-function-definition> f)
+                                    (<list> r))
+  (let* ((args (collect-temporaries (:arguments fix) f r))
+         (newvars (map new-renamed-variable (:variables fix)))
+         (newr (append (map cons (:variables fix) newvars) r)))
+    (adjoin-temp-variables! f newvars)
+    (make <fix-let> newvars args
+          (collect-temporaries (:body fix) f newr))))
+
+;; Add any new temporaries to the function definition
+(define (adjoin-temp-variables! f r)
+  (let adjoin ((temps (:temporaries f))
+               (vars r))
+    (if (pair? vars)
+        (if (memq (car vars) temps)
+            (adjoin temps (cdr vars))
+            (adjoin (cons (car vars) temps (cdr vars))))
+        (:temporaries! f temps))))
+
+(define-class (<renamed-variable> <variable>)
+  (index :index :index!))
+(define-method (initialize (<renamed-variable> self)
+                           (<symbol> name)
+                           (<number> index))
+  (init* self :name! name :index! index))
+
+;; We need new names, so give them a serial number
+(define *renamed-variable-index* 0)
+(define (new-renamed-variable var)
+  (set! *renamed-variable-index* (+ 1 *renamed-variable-index*))
+  (make <renamed-variable> (:name variable) *renamed-variable-index*))
+
+;; === All the transformations
+
+(define (transform p)
+  (-> p identity
+        insert-boxes
+        lambda-lift
+        extract-things
+        thunkify-main
+        #;gather-temporaries))
+
+;; test hook for this stage
+
+(define (eval-expr e)
+  (let* ((evaler   (create-evaluator #f))
+         (txformed (transform ((:expand evaler) e))))
+    (evaluate e sg.predef)))

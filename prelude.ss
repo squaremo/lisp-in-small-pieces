@@ -18,3 +18,13 @@
               (init1 (cddr fields)))
             (error "Field spec not in format (:mutator! value ...)" fields))))
   (init1 fields))
+
+(define-macro (-> value . rest)
+  (cond
+   ((null? rest)
+    value)
+   ((pair? rest)
+    (let ((next (car rest)))
+      (if (pair? next)
+          `(-> (,(car next) ,value ,@(cdr next)) ,@(cdr rest))
+          `(-> (,next ,value) ,@(cdr rest)))))))
