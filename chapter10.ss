@@ -95,8 +95,6 @@
 (define-method (visit (<box-read> read)
                       (<procedure> fun))
   (make <box-read> (fun (:reference read))))
-(define-method (->sexpr (<box-read> r))
-  (->sexpr (:reference r)))
 
 (define-class (<box-write> <program>)
   (reference :reference :reference!)
@@ -109,16 +107,12 @@
                       (<procedure> fun))
   (make <box-write> (fun (:reference write))
         (fun (:form write))))
-(define-method (->sexpr (<box-write> w))
-  `(set! ,(->sexpr (:reference w))
-         ,(->sexpr (:form w))))
 
 (define-class (<box-creation> <program>)
   (variable :variable :variable!))
 (define-method (initialize (<box-creation> self)
                            (<variable> var))
   (init* self :variable! var))
-(define-method (->sexpr (<box-creation> c)) '())
 
 ;; And now for the specialisations that we care about:
 (define-method (insert-boxes (<local-reference> ref))
@@ -180,9 +174,6 @@
                       (<procedure> fun))
   (make <flat-function> (:variables f)
         (fun (:body f)) (fun (:free f))))
-(define-method (->sexpr (<flat-function> f))
-  `(lambda ,(map ->sexpr (append (:variables f) (:free f)))
-     ,(->sexpr (:body f))))
 
 (define-class (<some-free> <free-environment>)
   (first :first :first!)
@@ -194,11 +185,8 @@
 (define-method (visit (<some-free> env)
                       (<procedure> fun))
   (make <some-free> (fun (:first env)) (fun (:others env))))
-(define-method (->sexpr (<some-free> f))
-  (cons (->sexpr (:first f)) (->sexpr (:others f))))
 
 (define-class (<no-free> <free-environment>))
-(define-method (->sexpr (<no-free> nf)) '())
 
 (define-class (<free-reference> <reference>))
 
@@ -276,12 +264,6 @@
                       (<procedure> fun))
   (make <flat-program> (:quotes flat)
         (map fun (:definitions flat))))
-(define-method (->sexpr (<flat-program> p))
-  (append (map (lambda (q) `(define ,(quotation-name (:name q))
-                              ,(:value q))) (:quotations p))
-          (map (lambda (f) `(define ,(function-def-name (:index f))
-                              ,(->sexpr f))) (:definitions p))
-          (list (->sexpr (:form p)))))
 
 ;; NB uses the `name` slot to store the index
 (define-class (<quotation-variable> <variable>)
@@ -290,11 +272,6 @@
                            (<number> index)
                            (<value> value))
   (init* self :name! index :value! value))
-(define-method (->sexpr (<quotation-variable> c))
-  (quotation-name (:name c)))
-
-(define (quotation-name index)
-  (string->symbol (string-append "constant_" (number->string index))))
 
 ;; An extracted, lifted lambda. NB 'free' is *not* a free environment
 ;; here, but merely a list of variables free in the body.
@@ -312,9 +289,6 @@
   (make <function-definition>
     (:variables def) (fun (:body def)) (:free def) (:index def)))
 
-(define (function-def-name index)
-  (string->symbol (string-append "func_" (number->string index))))
-
 ;; This will now stand in for abstractions that have been lifted; now
 ;; we inherit the free var environment from the flat-function, but
 ;; refer to the function definition.
@@ -331,10 +305,6 @@
                       (<procedure> fun))
   (make <closure-creation> (:index c) (:variables c)
         (fun (:free c))))
-(define-method (->sexpr (<closure-creation> cc))
-  `(lambda ,(->sexpr (:free cc))
-     (,(function-def-name (:index cc))
-      ,(append (map ->sexpr (:variables cc)) (->sexpr (:free cc))))))
 
 ;; Now the entry point. Again, this uses mutation on something created
 ;; for the transformation. The reason is similar to above, we need to
@@ -503,3 +473,38 @@
   (let* ((evaler   (create-evaluator #f))
          (txformed (transform ((:expand evaler) e))))
     (evaluate e sg.predef)))
+
+;; === ->sexpr
+
+(define (function-def-name index)
+  (string->symbol (string-append "func_" (number->string index))))
+
+(define (quotation-name index)
+  (string->symbol (string-append "constant_" (number->string index))))
+
+(define-methods ->sexpr
+  ([(<box-read> r)]
+   (->sexpr (:reference r)))
+  ([(<box-write> w)]
+   `(set! ,(->sexpr (:reference w))
+          ,(->sexpr (:form w))))
+  ([(<box-creation> c)] '())
+  ([(<flat-function> f)]
+   `(lambda ,(map ->sexpr (append (:variables f) (:free f)))
+      ,(->sexpr (:body f))))
+  ([(<some-free> f)]
+   (cons (->sexpr (:first f)) (->sexpr (:others f))))
+  ([(<no-free> nf)] '())
+  ([(<flat-program> p)]
+   (append (map (lambda (q) `(define ,(quotation-name (:name q))
+                               ,(:value q))) (:quotations p))
+           (map (lambda (f) `(define ,(function-def-name (:index f))
+                               ,(->sexpr f))) (:definitions p))
+           (list (->sexpr (:form p)))))
+  ([(<quotation-variable> c)]
+   (quotation-name (:name c)))
+  ([(<closure-creation> cc)]
+   `(lambda ,(->sexpr (:free cc))
+      (,(function-def-name (:index cc))
+       ,(append (map ->sexpr (:variables cc)) (->sexpr (:free cc))))))
+)
