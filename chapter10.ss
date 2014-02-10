@@ -188,7 +188,9 @@
 
 (define-class (<no-free> <free-environment>))
 
-(define-class (<free-reference> <reference>))
+;; Slight difference to the book, so that it can inherit the
+;; implementation of evaluate.
+(define-class (<free-reference> <local-reference>))
 
 (define-generics lift-procedures)
 
@@ -244,7 +246,7 @@
          (newf (make <flat-function> localvars body (make <no-free>))))
     (:body! newf (lift-procedures body newf localvars))
     ;; reprocess the free variables in terms of the current abstraction
-    (:free newf (lift-procedures (:free newf) f vars))
+    (:free! newf (lift-procedures (:free newf) f vars))
     newf))
 
 ;; === Collect quotations and functions
