@@ -135,7 +135,7 @@
   (let ((body (boxify-mutable-variables (:body f)
                                         (:variables f)))
         (args (insert-boxes (:arguments f))))
-    (make <fix-let> args body)))
+    (make <fix-let> (:variables f) args body)))
 
 (define (boxify-mutable-variables body vars)
   (if (pair? vars)
@@ -225,9 +225,9 @@
                                 (<value> f)
                                 (<list> vars))
   (let ((newvars (append (:variables fix) vars)))
-    (make <fix-let> vars
+    (make <fix-let> (:variables fix)
           (lift-procedures (:arguments fix) f vars)
-          (list-procedures (:body fix) f newvars))))
+          (lift-procedures (:body fix) f newvars))))
 
 ;; Again, a bit of mutation, because we construct the flat-fun with
 ;; the 'original' body as a placeholder, then process the body with
@@ -272,6 +272,8 @@
                            (<number> index)
                            (<value> value))
   (init* self :name! index :value! value))
+;; I have my own class so I can distinguish them when evaluating
+(define-class (<quotation-reference> <global-reference>))
 
 ;; An extracted, lifted lambda. NB 'free' is *not* a free environment
 ;; here, but merely a list of variables free in the body.
@@ -325,7 +327,7 @@
   (let* ((qv* (:quotations top))
          (qv (make <quotation-variable> (length qv*) (:value c))))
     (:quotations! top (cons qv qv*))
-    (make <global-reference> qv)))
+    (make <quotation-reference> qv)))
 
 (define-method (extract (<flat-function> f)
                         (<flat-program> top))
@@ -474,7 +476,52 @@
          (txformed (transform ((:expand evaler) e))))
     (evaluate e sg.predef)))
 
-;; === ->sexpr
+;; We have to supply a few more implementations of evaluate to be able
+;; to evaluate transformed programs. (Which is only useful for sanity
+;; checking, really.)
+
+;; Treat boxes like variable references
+(define-method (evaluate (<box-read> r) (<list> sr))
+  (evaluate (:reference r) sr))
+(define-method (evaluate (<box-write> w) (<list> sr))
+  (evaluate (make <local-assignment> (:reference w)
+                  (:form w)) sr))
+(define-method (evaluate (<box-creation> _) (<list> sr))
+  #f)
+
+;; For the sake of simplicity, I'm just going to put the function defs
+;; and quotations into vectors.
+(define *functions* (make-vector 100))
+(define *quotations* (make-vector 100))
+
+(define-method (evaluate (<quotation-reference> ref) (<list> sr))
+      (vector-ref *quotations* (-> ref :variable :name)))
+
+(define-method (evaluate (<quotation-variable> q) (<list> sr))
+  (vector-set! *quotations* (:name q) (:value q)))
+
+(define-method (evaluate (<function-definition> f) (<list> sr))
+  (vector-set! *functions* (:index f) f))
+
+;; This is essentially undoing the flattening by ignoring the free
+;; variables
+(define-method (evaluate (<closure-creation> c) (<list> sr))
+  (let ((func (vector-ref *functions* (:index c))))
+    (make <runtime-procedure> (:body func) (:variables func) sr)))
+
+(define-method (evaluate (<flat-program> p) (<list> sr))
+  (let ((ev (lambda (e) (evaluate e sr))))
+    (map ev (:quotations p))
+    (map ev (:definitions p))
+    (ev (:form p))))
+
+;; This won't be doing much more than the eval in chapter9.ss
+(define (eval-expr e)
+  (let* ((ev (create-evaluator #f))
+         (expand (:expand ev)))
+    (-> e expand transform (evaluate sg.predef))))
+
+;; === Support for ->sexpr
 
 (define (function-def-name index)
   (string->symbol (string-append "func_" (number->string index))))
