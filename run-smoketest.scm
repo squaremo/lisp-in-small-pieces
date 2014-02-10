@@ -12,6 +12,7 @@
 
 ;; Actually, other than those imports, it's all R5RS I think.
 
+(load "prelude.ss")
 (load "show.ss")
 
 (max-stack-trace-depth 16)

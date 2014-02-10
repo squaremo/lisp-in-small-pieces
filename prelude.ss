@@ -28,3 +28,9 @@
       (if (pair? next)
           `(-> (,(car next) ,value ,@(cdr next)) ,@(cdr rest))
           `(-> (,next ,value) ,@(cdr rest)))))))
+
+;; A working implementation of compose, since it seems to be missing from SISC
+(define (compose . procs)
+  (if (null? procs)
+      (lambda (v) v)
+      (lambda (v) ((car procs) ((apply compose (cdr procs)) v)))))

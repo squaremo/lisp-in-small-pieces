@@ -2,6 +2,7 @@
 ;; most just `show` to themselves)
 
 (import type-system)
+(import oo)
 
 (define (show v)
   (cond ((or (instance-of? v <symbol>)
@@ -9,7 +10,8 @@
              (instance-of? v <boolean>)
              (instance-of? v <string>)
              (instance-of? v <char>)
-             (instance-of? v <procedure>))
+             (instance-of? v <procedure>)
+             (eq? v (void)))
          v)
         ((list? v)
          (map show v))
@@ -29,6 +31,12 @@
         (collect (cdr classes)
                  (append slots (class-direct-slots (car classes)))))))
 
-(define (show-class-slot s v)
-  `(,(slot-name s) ,(show ((slot-accessor s) v))))
+(define symbol->list (compose string->list symbol->string))
+(define list->symbol (compose string->symbol list->string))
+(define (string-prepend a b) (string-append b a))
 
+(define (show-slot-name s)
+  (-> s slot-name symbol->string (string-prepend ":") string->symbol))
+
+(define (show-class-slot s v)
+  `(,(show-slot-name s) ,(show ((slot-accessor s) v))))
