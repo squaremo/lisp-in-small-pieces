@@ -885,54 +885,6 @@
                (invoke f (list (make <runtime-primitive> k = 1))))))
   1)
 
-;; Some procedures for showing things more compactly
-
-(define-generics show)
-(define-method (show (<constant> v))
-  (string-append "<constant " (show (:value v)) ">"))
-
-(define-method (show (<number> n)) (number->string n))
-(define-method (show (<string> s)) (string-append "\"" s "\""))
-(define-method (show (<boolean> b)) (if b "#t" "#f"))
-(define-method (show (<symbol> s)) (symbol->string s))
-
-(define-method (show (<predefined-application> a))
-  (string-append "(" (show (:variable a))
-                 (show (:arguments a)) ")"))
-
-(define-method (show (<predefined-reference> p))
-  (show (:variable p)))
-(define-method (show (<predefined-variable> p))
-  (symbol->string (:name p)))
-
-(define-method (show (<some-arguments> a))
-  (string-append " " (show (:first a)) (show (:others a))))
-(define-method (show (<no-argument> _)) "")
-
-(define-method (show (<fix-let> l))
-  (string-append
-   "(let "
-   (let loop ((vars (:variables l))
-              (args (:arguments l))
-              (str "("))
-     (if (pair? vars)
-         (loop
-          (cdr vars) (:others args)
-          (string-append str
-                         "(" (symbol->string (:name (car vars)))
-                         " " (show (:first args)) ")"))
-         str)) ") "
-   (show (:body l)) ")"))
-
-(define-method (show (<local-variable> v))
-  (string-append "<local " (symbol->string (:name v)) ">"))
-
-(define-method (show (<local-reference> r))
-  (show (:variable r)))
-
-(define-method (show (<sequence> s))
-  (string-append (show (:first s)) (show (:last s))))
-
 ;; Finally, a REPL
 
 (define (repl)

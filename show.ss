@@ -13,14 +13,18 @@
         ((list? v)
          (map show v))
         ((vector? v)
-         (vector-map show v))
+         (list->vector (map show (vector->list v))))
         (else
          (show-class-value v))))
 
 (define (show-class-value v)
-  (let ((c (type-of v)))
-    `(,(class-name c)
-      ,@(map (lambda (s) (show-class-slot s v)) (class-direct-slots c)))))
+  (let collect ((classes (class-precedence-list (type-of v)))
+                (slots '()))
+    (if (null? classes)
+        `(,(class-name (type-of v))
+          ,@(map (lambda (s) (show-class-slot s v)) slots))
+        (collect (cdr classes)
+                 (append slots (class-direct-slots (car classes)))))))
 
 (define (show-class-slot s v)
   `(,(slot-name s) ,(show ((slot-accessor s) v))))
