@@ -444,10 +444,10 @@
     (if (pair? vars)
         (if (memq (car vars) temps)
             (adjoin temps (cdr vars))
-            (adjoin (cons (car vars) temps (cdr vars))))
+            (adjoin (cons (car vars) temps) (cdr vars)))
         (:temporaries! f temps))))
 
-(define-class (<renamed-variable> <variable>)
+(define-class (<renamed-variable> <local-variable>)
   (index :index :index!))
 (define-method (initialize (<renamed-variable> self)
                            (<symbol> name)
@@ -458,7 +458,7 @@
 (define *renamed-variable-index* 0)
 (define (new-renamed-variable var)
   (set! *renamed-variable-index* (+ 1 *renamed-variable-index*))
-  (make <renamed-variable> (:name variable) *renamed-variable-index*))
+  (make <renamed-variable> (:name var) *renamed-variable-index*))
 
 ;; === All the transformations
 
@@ -468,7 +468,7 @@
         lambda-lift
         extract-things
         thunkify-main
-        #;gather-temporaries))
+        gather-temporaries))
 
 ;; test hook for this stage
 
@@ -504,11 +504,24 @@
 (define-method (evaluate (<function-definition> f) (<list> sr))
   (vector-set! *functions* (:index f) f))
 
-;; This is essentially undoing the flattening by ignoring the free
-;; variables
+;; Here we have to create an invokable object, given a function
+;; definition and the activation stack. A <runtime-procedure> will do
+;; fine. Now normally, we might rely on the free variables used in the
+;; definition being present in the activation stack; however, we may
+;; have renamed some of them, if they are introduced in a fix-let. So,
+;; we need to collect the free variables from the closure-creation
+;; and substitute them for those the definition is expecting.
 (define-method (evaluate (<closure-creation> c) (<list> sr))
   (let ((func (vector-ref *functions* (:index c))))
-    (make <runtime-procedure> (:body func) (:variables func) sr)))
+    (let loop ((sr* sr)
+               (free* (:free c))
+               (var* (:free func)))
+      (if (instance-of? free* <no-free>) ;; assume free* and var* have
+                                        ;; same arity
+          (make <runtime-procedure> (:body func) (:variables func) sr*)
+          (let ((val (evaluate (:first free*) sr)))
+            (loop (sr-extend sr (car var*) val)
+                  (:others free*) (cdr var*)))))))
 
 (define-method (evaluate (<flat-program> p) (<list> sr))
   (let ((ev (lambda (e) (evaluate e sr))))
