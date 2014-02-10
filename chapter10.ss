@@ -3,7 +3,6 @@
 ;; C.
 
 (load "chapter9.ss")
-(load "show.ss")
 
 ;; We start by making a code walker: it'll visit each subprogram and
 ;; thereby construct a new program.
@@ -524,6 +523,8 @@
     (-> e expand transform (evaluate sg.predef))))
 
 ;; === Support for ->sexpr
+
+(load "sexpr.ss")
 
 (define (function-def-name index)
   (string->symbol (string-append "func_" (number->string index))))

@@ -12,6 +12,11 @@
 
 ;; Actually, other than those imports, it's all R5RS I think.
 
+(load "show.ss")
+
+(max-stack-trace-depth 16)
+#;(suppressed-stack-trace-source-kinds '())
+
 (define (main arguments)
 
   (load (cadr arguments))
@@ -19,9 +24,15 @@
   (with-input-from-port (open-input-file "test-exprs.scm")
     (lambda ()
       (define (eval-exprs)
-        (let ((in (read)))
-          (if (not (eq? #!eof in))
-              (begin (display (eval-expr in))(newline)
-                     (eval-exprs)))))
+        (let* ((desc (read))
+               (expr (read)))
+          (when (not (eq? #!eof desc))
+                (display desc)(newline)
+                (with-failure-continuation
+                 (lambda (e k)
+                   (display e)(newline)
+                   (eval-exprs))
+                 (lambda () (display (eval-expr expr))(newline)))
+                (eval-exprs))))
       (eval-exprs)))
   0)
