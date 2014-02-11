@@ -32,3 +32,9 @@
    ((lambda (c)
       (p (call/cc c) b))
     (lambda (k) (k a)))) 1 + 2)
+
+"set! in fix-let"
+((lambda (a) (set! a 1) a) #f)
+
+"set! global variable"
+(begin (set! b "foobar") 2)

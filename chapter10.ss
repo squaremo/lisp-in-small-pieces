@@ -140,7 +140,7 @@
   (if (pair? vars)
       (if (:mutable? (car vars))
           (boxify-mutable-variables
-           (make <sequence> (make <box-creation> (car vars)) body))
+           (make <sequence> (make <box-creation> (car vars)) body) (cdr vars))
           (boxify-mutable-variables body (cdr vars)))
       body))
 
@@ -511,6 +511,7 @@
 ;; have renamed some of them, if they are introduced in a fix-let. So,
 ;; we need to collect the free variables from the closure-creation
 ;; and substitute them for those the definition is expecting.
+;; (The book eventually does this, in chap10{c,d}.scm)
 (define-method (evaluate (<closure-creation> c) (<list> sr))
   (let ((func (vector-ref *functions* (:index c))))
     (let loop ((sr* sr)
@@ -532,8 +533,10 @@
 ;; This won't be doing much more than the eval in chapter9.ss
 (define (eval-expr e)
   (let* ((ev (create-evaluator #f))
-         (expand (:expand ev)))
-    (-> e expand transform (evaluate sg.predef))))
+         (expanded ((:expand ev) e))
+         (_ (enrich-with-new-global-variables! ev))
+         (sg (:runtime ev)))
+    (-> expanded transform (evaluate sg))))
 
 ;; === Support for ->sexpr
 

@@ -14,7 +14,9 @@
 ;; Represents a binding
 (define-class (<variable>)
   (name :name :name!))
-
+(define-method (initialize (<variable> self)
+                           (<symbol> name))
+  (init* self :name! name))
 
 ;; A lexical environment. This abstract class is used as a marker.
 (define-generics :next :next!)
@@ -82,9 +84,9 @@
   (reference :reference :reference!)
   (form :form :form!))
 (define-method (initialize (<local-assignment> self)
-                           (<local-variable> variable)
+                           (<local-reference> ref)
                            (<program> form))
-  (init* self :variable! variable :form! form))
+  (init* self :reference! ref :form! form))
 
 (define-generics :variables :variables!
   :body :body!)
@@ -352,7 +354,8 @@
            (make <predefined-reference> v))
           (else (objectify-free-global-reference variable r)))))
 
-;; Not sure of the justification of automagically creating globals
+;; Not sure of the justification of automagically creating globals, I
+;; think it's just convenience at this point.
 (define (objectify-free-global-reference name r)
   (let ((v (make <global-variable> name)))
     (insert-global! v r)
