@@ -193,9 +193,8 @@
   (generator :generator :generator!))
 (define-method (initialize (<functional-description> self)
                            (<procedure> comparator)
-                           (<number> arity)
-                           (<value> generator))
-  (init* self :comparator! comparator :arity! arity :generator! generator))
+                           (<number> arity))
+  (init* self :comparator! comparator :arity! arity))
 
 ;; This is going to represent anything that's a special form at the
 ;; current level of evaluation. There are some special forms in the
@@ -527,7 +526,7 @@
 
     ;; eval goes in the 
     (let ((eval-var (make <predefined-variable>
-                      'eval (make <functional-description> = 1 "")))
+                      'eval (make <functional-description> = 1)))
           (eval-fn (make <runtime-primitive> eval = 1)))
       (set! g (r-extend g eval-var))
       (set! sg (sr-extend sg eval-var eval-fn)))
@@ -802,42 +801,42 @@
   (syntax-rules (>=0 >=2)
     ((defprimitive name value 0)
      (let ((v (make <predefined-variable> 'name
-                    (make <functional-description> = 0 "")))
+                    (make <functional-description> = 0)))
            (f (make <runtime-primitive> value = 0)))
        (set! g.predef (make <full-environment> g.predef v))
        (set! sg.predef (sr-extend sg.predef v f))
        'name))
     ((defprimitive name value 1)
      (let ((v (make <predefined-variable> 'name
-                    (make <functional-description> = 1 "")))
+                    (make <functional-description> = 1)))
            (f (make <runtime-primitive> value = 1)))
        (set! g.predef (make <full-environment> g.predef v))
        (set! sg.predef (sr-extend sg.predef v f))
        'name))
     ((defprimitive name value 2)
      (let ((v (make <predefined-variable> 'name
-                    (make <functional-description> = 2 "")))
+                    (make <functional-description> = 2)))
            (f (make <runtime-primitive> value = 2)))
        (set! g.predef (make <full-environment> g.predef v))
        (set! sg.predef (sr-extend sg.predef v f))
        'name))
     ((defprimitive name value 3)
      (let ((v (make <predefined-variable> 'name
-                    (make <functional-description> = 3 "")))
+                    (make <functional-description> = 3)))
            (f (make <runtime-primitive> value = 3)))
        (set! g.predef (make <full-environment> g.predef v))
        (set! sg.predef (sr-extend sg.predef v f))
        'name))
     ((defprimitive name value >=0)
      (let ((v (make <predefined-variable> 'name
-                    (make <functional-description> >= 0 "")))
+                    (make <functional-description> >= 0)))
            (f (make <runtime-primitive> value >= 0)))
        (set! g.predef (make <full-environment> g.predef v))
        (set! sg.predef (sr-extend sg.predef v f))
        'name))
     ((defprimitive name value >=2)
      (let ((v (make <predefined-variable> 'name
-                    (make <functional-description> >= 2 "")))
+                    (make <functional-description> >= 2)))
            (f (make <runtime-primitive> value >= 2)))
        (set! g.predef (make <full-environment> g.predef v))
        (set! sg.predef (sr-extend sg.predef v f))
