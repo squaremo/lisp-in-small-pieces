@@ -128,13 +128,13 @@
 (define-method (insert-boxes (<function> f))
   (let ((body (boxify-mutable-variables (:body f)
                                         (:variables f))))
-    (make <function> (:variables f) body)))
+    (make <function> (:variables f) (insert-boxes body))))
 
 (define-method (insert-boxes (<fix-let> f))
   (let ((body (boxify-mutable-variables (:body f)
                                         (:variables f)))
         (args (insert-boxes (:arguments f))))
-    (make <fix-let> (:variables f) args body)))
+    (make <fix-let> (:variables f) args (insert-boxes body))))
 
 (define (boxify-mutable-variables body vars)
   (if (pair? vars)
