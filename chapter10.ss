@@ -481,14 +481,18 @@
 ;; to evaluate transformed programs. (Which is only useful for sanity
 ;; checking, really.)
 
+(define *boxes* '())
+
 ;; Treat boxes like variable references
 (define-method (evaluate (<box-read> r) (<list> sr))
-  (evaluate (:reference r) sr))
+  (let ((box (assq (:variable (:reference r)) *boxes*)))
+    (cdr box)))
 (define-method (evaluate (<box-write> w) (<list> sr))
-  (evaluate (make <local-assignment> (:reference w)
-                  (:form w)) sr))
-(define-method (evaluate (<box-creation> _) (<list> sr))
-  #f)
+  (let ((box (assq (:variable (:reference w)) *boxes*))
+        (val (evaluate (:form w) sr)))
+    (set-cdr! box val)))
+(define-method (evaluate (<box-creation> box) (<list> sr))
+  (set! *boxes* (cons (cons (:variable box) undefined-value) *boxes*)))
 
 ;; For the sake of simplicity, I'm just going to put the function defs
 ;; and quotations into vectors.
@@ -532,6 +536,7 @@
 
 ;; This won't be doing much more than the eval in chapter9.ss
 (define (eval-expr e)
+  (set! *boxes* '())
   (let* ((ev (create-evaluator #f))
          (expanded ((:expand ev) e))
          (_ (enrich-with-new-global-variables! ev))

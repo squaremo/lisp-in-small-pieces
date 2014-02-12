@@ -38,3 +38,6 @@
 
 "set! global variable"
 (begin (set! b "foobar") 2)
+
+"set! in function"
+((lambda (f) (f #f 1)) (lambda (a b) (set! a b) a))
