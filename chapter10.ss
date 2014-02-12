@@ -356,15 +356,14 @@
 ;; better than that of the book)
 (define (thunkify-main top)
   (let ((index (length (:definitions top))))
-    (:definitions! top
-                   (cons (make <function-definition>
-                           '() (:form top) '() index)
-                         (:definitions top)))
-    (:form! top
-            (make <regular-application>
-              (make <closure-creation> index '() (make <no-free>))
-              (make <no-argument>)))
-    top))
+    (make <flat-program>
+      (make <regular-application>
+        (make <closure-creation> index '() (make <no-free>))
+        (make <no-argument>))
+      (:quotations top)
+      (cons (make <function-definition>
+              '() (:form top) '() index)
+            (:definitions top)))))
 
 ;; === Collect temporaries
 
@@ -398,7 +397,8 @@
                              (:free def)
                              (:index def)
                              '())))
-             (collect-temporaries withtemp withtemp '())))
+             (collect-temporaries withtemp withtemp '())
+             withtemp))
          (:definitions p))))
 
 (define-generics collect-temporaries)
