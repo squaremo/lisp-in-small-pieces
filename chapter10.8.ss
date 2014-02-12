@@ -174,7 +174,7 @@
 
 
 (define-method (->C (<program> p) (<output-port> out))
-  (error (list "->C unimplemented for " p)))
+  (error (list "->C unimplemented for " (class-name (type-of p)))))
 
 ;; Lots of things will need parens to disambiguate
 (define-syntax in-parens
@@ -368,7 +368,7 @@
     (if (pair? vars)
         (if (:dotted? (car vars))
             (- (+ arity 1))
-            (count (cdr variables) (+ 1 arity)))
+            (count (cdr vars) (+ 1 arity)))
         arity)))
 
 (define-method (->C (<no-free> _) (<output-port> out))
@@ -404,7 +404,7 @@
                 (set! rank (+ rank 1))
                 (cond ((:dotted? v)
                        (format out "SCM_DeclareDottedVariable("))
-                      ((instance-of? <variable>)
+                      ((instance-of? v <variable>)
                        (format out "SCM_DeclareVariable(")))
                 (variable->C v out)
                 (format out ",~A);~%" rank))
