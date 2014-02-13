@@ -9,12 +9,26 @@
 ;; to keep the structure from chapter9.ss, so I'm going to diverge a
 ;; bit on how globals are treated (by keeping it the same as before).
 
-;; There are now two distinct phases: the primitives during
-;; compilation differ from the primitives at runtime. To make things
-;; simpler, I'm going to assume the set of primitives is the same.
+;; There are now two distinct phases: the primitives in the runtime
+;; differ from the primitives at compile time, so I use a distinct
+;; environment for the top level of evaluator (which is used only for
+;; expansion).
 
 (define (compile/C e out)
-  (let* ((ev (create-evaluator #f))
+
+  ;; Helpers for finding the "top" of the global environment in an
+  ;; evaluator, and collating the list of globals introduced in the
+  ;; program.
+  (define (global-defs ev)
+    (-> ev :preparation find-global-environment :next))
+
+  (define (collect-globals r init)
+    (let collect ((g r)
+                  (g* '()))
+      (if (equal? g init) g*
+          (collect (:next g) (cons (:variable g) g*)))))
+
+  (let* ((ev (create-evaluator/top))
          ;; Globals defined in the program get put in the environment
          ;; after the marker (a 'blank' environment) and before the
          ;; enhanced (with magic-keywords), predefined environment.
@@ -23,10 +37,94 @@
          (g (collect-globals (global-defs ev) g.init)))
     (generate-C-program out e prg g)))
 
-;; Helper for finding the "top" of the global environment in an
-;; evaluator
-(define (global-defs ev)
-  (-> ev :preparation find-global-environment :next))
+(define g.top (make <environment>))
+(define sg.top '())
+
+
+;; In chapter9 I left the generator field alone; now I want to use it,
+;; so, define another intialize.
+(define-method (initialize (<functional-description> self)
+                           (<procedure> comp)
+                           (<number> arity)
+                           (<procedure> gen))
+  (init* self :comparator! comp :arity! arity :generator! gen))
+
+;; We only inline things with fixed arity. Primitives with varargs are
+;; treated as predefined variables, i.e., follow the invocation
+;; protocol rather than being inlined.
+(define-syntax def-runtime
+  (syntax-rules ()
+    ((_ name Cname arity)
+     (let ((v (make <predefined-variable> 'name
+                    (make <functional-description> = arity
+                          (make-predef-generator 'Cname)))))
+       (set! g.top (make <full-environment> v g.top))
+       ;; Doesn't need to be in sg, because there's no eval at the top
+       ;; level
+       'name))))
+
+(define-syntax def-runtime-primitive
+  (syntax-rules ()
+    ((_ name Cname arity)
+     (let ((v (make <predefined-variable>
+                'name
+                (make <functional-description>
+                  = arity
+                  (make-predef-generator 'Cname)))))
+       (set! g.top (r-extend g.top v))
+       'name))))
+
+(def-runtime-primitive cons "SCM_cons" 2)
+(def-runtime-primitive car "SCM_car" 1)
+(def-runtime-primitive + "SCM_Plus" 2)
+(def-runtime-primitive = "SCM_EqnP" 2)
+
+;; (list ...) isn't fixed arity, so it can't be inlined in the same
+;; way as those above. However, it's added to the global environment,
+;; and defined as a procedure in the runtime. Giving a 'blank'
+;; description here keeps the expander from making this a
+;; predefined-application (way back in chapter9.ss)
+(begin
+  (set! g.top
+        (r-extend* g.top (map (lambda (name)
+                                (make <predefined-variable> name
+                                      (make <description>)))
+                              '(list)))))
+
+;; This is an adaption of create-evaluator from chapter9.ss,
+;; specialised to use the special top-level environments, which
+;; contain the runtime definitions for primtives. g.predef and
+;; sg.predef are relegated to compile-time environments.
+(define (create-evaluator/top)
+  (let ((level 'wait)
+        (g g.top)
+        (sg sg.top))
+
+    (define (expand e)
+      (let ((prg (objectify e (:preparation level))))
+        (enrich-with-new-global-variables! level)
+        prg))
+
+    (define (eval . _)
+      (compiler-error "No eval at top level"))
+
+    ;; NB we should not be evaling at this level, so eval gets false
+    (set! level (make <evaluator> #f eval expand))
+
+    ;; Special forms are always a part of the global env
+    (set! g (r-extend* g *special-form-keywords*))
+    (set! g (r-extend* g (make-macro-environment level)))
+
+    ;; eval goes in the global env at each level
+    (let ((eval-var (make <predefined-variable>
+                      'eval (make <functional-description> = 1)))
+          (eval-fn (make <runtime-primitive> eval = 1)))
+      (set! g (r-extend g eval-var))
+      (set! sg (sr-extend sg eval-var eval-fn)))
+
+    (:preparation! level (mark-global-environment g))
+    (:runtime! level (mark-global-runtime-environment sg))
+    level))
 
 (define (generate-C-program out e p g)
   (generate-header out e)
@@ -46,12 +144,6 @@
   (format out "/* End of generated code */~%"))
 
 ;; === Globals
-
-(define (collect-globals r init)
-  (let collect ((g r)
-                (g* '()))
-    (if (equal? g init) g*
-        (collect (:next g) (cons (:variable g) g*)))))
 
 (define (generate-global-environment out g*)
   (for-each (lambda (gv)
@@ -97,7 +189,7 @@
 
 ;; Immediate values, that is values that can directly represented in C
 
-;; After the book, we'll use 16-bit fixnums
+;; This is machine specific no?
 (define *max-fixnum* 16384)
 (define *min-fixnum* (- *max-fixnum*))
 
@@ -121,7 +213,7 @@
           ((string? value)
            (format out "SCM_DefineString(thing~A_object, \"~A\");~%"
                    index value)
-           (format out "#define thing~A SCM_wrap(&thing~A_object)~%"
+           (format out "#define thing~A SCM_Wrap(&thing~A_object)~%"
                    index index)))))
 
 ;; Make a symbol out of an existing string
@@ -138,7 +230,7 @@
 (define (generate-symbol out qv strqv)
   (format out "SCM_DefineSymbol(thing~A_object, thing~A); /* ~S */~%"
           (:name qv) (:name strqv) (:value qv))
-  (format out "#define thing~A SCM_wrap(&thing~A_object)~%"
+  (format out "#define thing~A SCM_Wrap(&thing~A_object)~%"
           (:name qv) (:name qv)))
 
 (define (scan-pair out value qv* i results)
@@ -162,7 +254,7 @@
   (format out
           "SCM_DefinePair(thing~A_object, thing~A, thing~A) /* ~S */~%"
           (:name qv) (:name aqv) (:name dqv) (:value qv))
-  (format out "#define thing~A SCM_wrap(&thing~A_object)~%"
+  (format out "#define thing~A SCM_Wrap(&thing~A_object)~%"
           (:name qv) (:name qv)))
 
 
@@ -171,7 +263,6 @@
 (define-generics ->C)
 
 (define <output-port> <character-output-port>)
-
 
 (define-method (->C (<program> p) (<output-port> out))
   (error (list "->C unimplemented for " (class-name (type-of p)))))
@@ -258,6 +349,12 @@
 ;; === Function applications
 ;; Here is where it gets fun.
 
+;; Predefined procedures with fixed arity get inlined (see ->C at
+;; <predefined-application>). There are a handful of predefined
+;; procedures that have varargs, and these are initialised as
+;; variables, but not given descriptions (so they're not inlined, but
+;; invoked like a "normal" closure).
+
 (define-method (->C (<regular-application> a) (<output-port> out))
   (let ((n (number-of (:arguments a))))
     (cond ((< n 4)
@@ -269,7 +366,7 @@
            (format out "SCM_invoke")
            (in-parens out
                       (->C (:function a) out)
-                      (format out ",~A")
+                      (format out ",~A" n)
                       (->C (:arguments a) out))))))
 
 (define-method (->C (<fix-let> f) (<output-port> out))
@@ -289,10 +386,15 @@
                             (<output-port> out))
   (format out "")) ;; Ummmmm
 
-;; predefineds get inlined
 (define-method (->C (<predefined-application> a) (<output-port> out))
-  (-> a :variable runtime-description :generator
+  (-> a :variable :description :generator
       (apply (list a out))))
+
+(define (make-predef-generator Cname)
+  (lambda (e out)
+    (format out "~A" Cname)
+    (in-parens out (arguments->C (:arguments e) out))))
+
 
 ;; For use by the inline generators. Note the second call, not to
 ;; arguments->C but to ->C
@@ -308,45 +410,6 @@
   (->C (:others args) out))
 (define-method (->C (<no-argument> _) (<output-port> out))
   #t)
-
-;; === Defining primitives
-
-(define-method (initialize (<functional-description> self)
-                           (<procedure> comp)
-                           (<number> arity)
-                           (<procedure> gen))
-  (init* self :comparator! comp :arity! arity :generator! gen))
-
-
-(define g.runtime '())
-
-(define (runtime-description v)
-  (let find ((g* g.runtime))
-    (if (pair? g*)
-        (let ((g (car g*)))
-          (if (eq? (:name g) (:name v))
-              (:description g)
-              (find (cdr g*))))
-        (compiler-error '("Predefined not found" (:name v))))))
-
-(define-syntax def-rt-primitive
-  (syntax-rules ()
-    ((_ name Cname arity)
-     (let ((v (make <predefined-variable> 'name
-                    (make <functional-description> = arity
-                          (make-predef-generator 'Cname)))))
-       (set! g.runtime (cons v g.runtime))
-       'name))))
-
-(define (make-predef-generator Cname)
-  (lambda (e out)
-    (format out "~A" Cname)
-    (in-parens out (arguments->C (:arguments e) out))))
-
-(def-rt-primitive cons "SCM_cons" 2)
-(def-rt-primitive car "SCM_car" 1)
-(def-rt-primitive + "SCM_Plus" 2)
-(def-rt-primitive = "SCM_EqnP" 2)
 
 ;; === Creating functions
 
@@ -388,7 +451,7 @@
             (reverse definitions)))
 
 (define (generate-closure-structure out def)
-  (format out "SCM_DefineClosure(function~A, "
+  (format out "SCM_DefineClosure(function_~A, "
           (:index def))
   (generate-local-temporaries out (:free def))
   (format out ");~%"))
@@ -428,7 +491,7 @@
 
 (define (generate-main out form)
   (format out "~%/* Expression: */~%")
-  (format out "void main(void) {~%")
+  (format out "int main(void) {~%")
   (format out "  SCM_print")
   (in-parens out (->C form out))
   (format out ";~%  exit(0);~%}~%"))
