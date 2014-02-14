@@ -40,57 +40,6 @@
 (define g.top (make <environment>))
 (define sg.top '())
 
-
-;; In chapter9 I left the generator field alone; now I want to use it,
-;; so, define another intialize.
-(define-method (initialize (<functional-description> self)
-                           (<procedure> comp)
-                           (<number> arity)
-                           (<procedure> gen))
-  (init* self :comparator! comp :arity! arity :generator! gen))
-
-;; We only inline things with fixed arity. Primitives with varargs are
-;; treated as predefined variables, i.e., follow the invocation
-;; protocol rather than being inlined.
-(define-syntax def-runtime
-  (syntax-rules ()
-    ((_ name Cname arity)
-     (let ((v (make <predefined-variable> 'name
-                    (make <functional-description> = arity
-                          (make-predef-generator 'Cname)))))
-       (set! g.top (make <full-environment> v g.top))
-       ;; Doesn't need to be in sg, because there's no eval at the top
-       ;; level
-       'name))))
-
-(define-syntax def-runtime-primitive
-  (syntax-rules ()
-    ((_ name Cname arity)
-     (let ((v (make <predefined-variable>
-                'name
-                (make <functional-description>
-                  = arity
-                  (make-predef-generator 'Cname)))))
-       (set! g.top (r-extend g.top v))
-       'name))))
-
-(def-runtime-primitive cons "SCM_cons" 2)
-(def-runtime-primitive car "SCM_car" 1)
-(def-runtime-primitive + "SCM_Plus" 2)
-(def-runtime-primitive = "SCM_EqnP" 2)
-
-;; (list ...) isn't fixed arity, so it can't be inlined in the same
-;; way as those above. However, it's added to the global environment,
-;; and defined as a procedure in the runtime. Giving a 'blank'
-;; description here keeps the expander from making this a
-;; predefined-application (way back in chapter9.ss)
-(begin
-  (set! g.top
-        (r-extend* g.top (map (lambda (name)
-                                (make <predefined-variable> name
-                                      (make <description>)))
-                              '(list)))))
-
 ;; This is an adaption of create-evaluator from chapter9.ss,
 ;; specialised to use the special top-level environments, which
 ;; contain the runtime definitions for primtives. g.predef and
@@ -484,8 +433,8 @@
   (when (pair? temps)
         (format out "SCM ")
         (variable->C (car temps) out)
-        (format "; ")
-        (generate-local-temporaries (cdr temps) out)))
+        (format out "; ")
+        (generate-local-temporaries out (cdr temps))))
 
 ;; === Main
 
@@ -496,6 +445,89 @@
   (in-parens out (->C form out))
   (format out ";~%  exit(0);~%}~%"))
 
+;; === Definining primitives
+
+;; In chapter9 I left the generator field alone; now I want to use it,
+;; so, define another initialize.
+(define-method (initialize (<functional-description> self)
+                           (<procedure> comp)
+                           (<number> arity)
+                           (<procedure> gen))
+  (init* self :comparator! comp :arity! arity :generator! gen))
+
+;; We only inline things with fixed arity. Primitives with varargs are
+;; treated as predefined variables, i.e., follow the invocation
+;; protocol rather than being inlined.
+(define-syntax def-runtime
+  (syntax-rules ()
+    ((_ name Cname arity)
+     (let ((v (make <predefined-variable> 'name
+                    (make <functional-description> = arity
+                          (make-predef-generator 'Cname)))))
+       (set! g.top (make <full-environment> v g.top))
+       ;; Doesn't need to be in sg, because there's no eval at the top
+       ;; level
+       'name))))
+
+(define-syntax def-runtime-primitive
+  (syntax-rules ()
+    ((_ name Cname arity)
+     (let ((v (make <predefined-variable>
+                'name
+                (make <functional-description>
+                  = arity
+                  (make-predef-generator 'Cname)))))
+       (set! g.top (r-extend g.top v))
+       'name))))
+
+(def-runtime-primitive cons "SCM_cons" 2)
+(def-runtime-primitive car "SCM_car" 1)
+(def-runtime-primitive + "SCM_Plus" 2)
+(def-runtime-primitive = "SCM_EqnP" 2)
+
+;; (list ...) isn't fixed arity, so it can't be inlined in the same
+;; way as those above. However, it's added to the global environment,
+;; and defined as a procedure in the runtime. Giving a 'blank'
+;; description here keeps the expander from making this a
+;; predefined-application (way back in chapter9.ss)
+(begin
+  (set! g.top
+        (r-extend* g.top (map (lambda (name)
+                                (make <predefined-variable> name
+                                      (make <description>)))
+                              '(list)))))
+
+;; Test hook
+
+(import os)
+
+(define (eval-expr expr)
+  (call-with-output-file "test.c"
+    (lambda (out) (compile/C expr out)))
+  (let* ((gcc (spawn-process
+               "gcc" (list "-otest" "test.c" "scheme.c" "primitives.c")))
+         (err (get-process-stderr gcc))
+         (res (wait-for-process gcc)))
+    (if (= res 0)
+        (let* ((test (spawn-process "./test"))
+               (in (open-character-input-port (get-process-stdout test)))
+               (res (wait-for-process test)))
+          (if (= res 0)
+              (let ((output (with-input-from-port in (lambda () (read)))))
+                output)
+              (error `("Test program reported an error" ,res))))
+        (error `("Test program did not compile" ,res ,(read-lines err))))))
+
+(define (read-lines binport)
+  (let ((chars (open-character-input-port binport)))
+    (let loop ((line '())
+               (lines '()))
+      (let ((char (read-char chars)))
+        (cond ((eof-object? char)
+               (reverse (cons (apply string (reverse line)) lines)))
+              ((eq? char #\n)
+               (loop '() (cons (apply string (reverse line)) lines)))
+              (else (loop (cons char line) lines)))))))
 
 ;; === Converting Scheme names to C names
 
