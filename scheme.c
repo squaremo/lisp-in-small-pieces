@@ -27,6 +27,18 @@ SCM SCM_close (SCM (*Cfunction)(void),
   return SCM_Wrap(result);
 }
 
+/* Boxeses */
+
+/* As the book code notes, it is kind of ridiculous to malloc a
+ * word. It would be better to allocate pools of boxes at a time,
+ * perhaps. */
+SCM SCM_allocate_box(SCM v) {
+  SCM cell = (SCM) malloc(sizeof(struct SCM_box));
+  if (cell == (SCM)NULL) SCM_error(SCM_ERR_CANT_ALLOC);
+  cell->box.content = v;
+  return cell;
+}
+
 /* Pairs */
 
 SCM SCM_cons (SCM a, SCM d) {
