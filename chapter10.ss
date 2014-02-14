@@ -384,21 +384,30 @@
          :variables! vars :body! body
          :free! free :index! index
          :temporaries! temporaries))
-;; visit already covered by <function-definition>
+(define-method (visit (<with-temp-function-definition> def)
+                      (<procedure> fun))
+  (make <with-temp-function-definition>
+    (:variables def)
+    (fun (:body def))
+    (:free def)
+    (:index def)
+    (:temporaries def)))
 
 (define (gather-temporaries p)
   (make <flat-program>
     ;; form quotes defs
     (:form p) (:quotations p)
     (map (lambda (def)
-           (let ((withtemp (make <with-temp-function-definition>
-                             (:variables def)
-                             (:body def)
-                             (:free def)
-                             (:index def)
-                             '())))
-             (collect-temporaries withtemp withtemp '())
-             withtemp))
+           (let* ((holder (make <with-temp-function-definition>
+                            (:variables def)
+                            (:body def)
+                            (:free def)
+                            (:index def)
+                            '()))
+                  (fresh
+                   (collect-temporaries holder holder '())))
+             (:temporaries! fresh (:temporaries holder))
+             fresh))
          (:definitions p))))
 
 (define-generics collect-temporaries)
