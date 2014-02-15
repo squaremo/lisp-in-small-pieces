@@ -154,42 +154,19 @@ extern struct SCM_unwrapped_immediate_object SCM_undefined_object;
 #define SCM_nil   SCM_Wrap(&SCM_nil_object)
 #define SCM_undefined SCM_Wrap(&SCM_undefined_object)
 
-/* Runtime procedures, defined in scheme.c */
+/* Runtime procedures, defined in scheme.c or primitives.c */
 
 extern SCM SCM_invoke(SCM fun, unsigned long number, ...);
 extern SCM SCM_close(SCM (*Cfunc)(void), long arity, unsigned long size, ...);
 extern SCM SCM_signal_error(unsigned long code, unsigned long line, char *file);
 extern SCM SCM_allocate_box(SCM v);
 /* extern SCM SCM_allocate_continuation (struct SCM_jmp_buf *address); */
-extern SCM SCM_list(unsigned long count, va_list arguments);
 extern SCM SCM_prin(SCM x); /* not the primitive, though it uses this */
-/* extern SCM SCM_apply(unsigned long number, va_list arguments); */
 
-
-/* Runtime primitives, the functions rather than the structs. The book
- * code has a couple of shortcuts for these, which I'll copy */
-
-#define SCM_DeclareConstant(var) extern SCM var
-
-#define SCM_DeclareSubr0(var,Cname) \
-  SCM_DeclareConstant(var); extern SCM Cname(void)
-#define SCM_DeclareSubr1(var,Cname) \
-  SCM_DeclareConstant(var); extern SCM Cname(SCM x)
-#define SCM_DeclareSubr2(var,Cname) \
-  SCM_DeclareConstant(var); extern SCM Cname(SCM x, SCM y)
-#define SCM_DeclareSubr3(var,Cname) \
-  SCM_DeclareConstant(var); extern SCM Cname(SCM x, SCM y, SCM z)
-
-SCM_DeclareSubr2(EQN,SCM_eqnp);
-SCM_DeclareSubr2(EQ,SCM_eqp);
-SCM_DeclareSubr1(CAR,SCM_car);
-SCM_DeclareSubr1(CDR,SCM_cdr);
-SCM_DeclareSubr2(CONS,SCM_cons);
-SCM_DeclareSubr2(PLUS,SCM_plus);
-SCM_DeclareSubr1(NULLP,SCM_nullp);
-
-SCM_DeclareSubr1(print, SCM_print);
-SCM_DeclareConstant(list);
+/* These are used as primitives, but only via their values (not called
+ * inline), because they're not fixed arity. */
+extern SCM SCM_list(unsigned long count, va_list arguments);
+extern SCM SCM_apply(unsigned long count, va_list arguments);
 
 /* Handy macros for dealing with values from C */
 
@@ -321,8 +298,41 @@ SCM_DeclareConstant(list);
 #define SCM_ERR_CANNOT_APPLY   50
 #define SCM_ERR_WRONG_ARITY    51
 #define SCM_ERR_INTERNAL       52
+#define SCM_ERR_MISSING_ARGS   53
+
+#define SCM_ERR_APPLY_ARG      40
+#define SCM_ERR_APPLY_SIZE     41
 
 #define SCM_ERR_CANT_ALLOC     100
 #define SCM_ERR_UNINITIALIZED  11
+
+/* Finally, declare the rest of the primitives */
+
+#define SCM_DeclareConstant(var) extern SCM var
+
+#define SCM_DeclareSubr0(var,Cname) \
+  SCM_DeclareConstant(var); extern SCM Cname(void)
+#define SCM_DeclareSubr1(var,Cname) \
+  SCM_DeclareConstant(var); extern SCM Cname(SCM x)
+#define SCM_DeclareSubr2(var,Cname) \
+  SCM_DeclareConstant(var); extern SCM Cname(SCM x, SCM y)
+#define SCM_DeclareSubr3(var,Cname) \
+  SCM_DeclareConstant(var); extern SCM Cname(SCM x, SCM y, SCM z)
+
+SCM_DeclareSubr2(EQNP,SCM_eqnp);
+SCM_DeclareSubr2(EQP,SCM_eqp);
+SCM_DeclareSubr1(car,SCM_car);
+SCM_DeclareSubr1(cdr,SCM_cdr);
+SCM_DeclareSubr2(cons,SCM_cons);
+SCM_DeclareSubr1(CONSP,SCM_consp);
+SCM_DeclareSubr1(NULLP,SCM_nullp);
+SCM_DeclareSubr2(PLUS,SCM_plus);
+
+SCM_DeclareSubr1(print,SCM_print);
+
+/* These aren't available to be called inline, so they just get the
+ * structs declared */
+SCM_DeclareConstant(list);
+SCM_DeclareConstant(apply);
 
 #endif /* SCHEME_H */

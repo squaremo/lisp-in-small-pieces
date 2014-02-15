@@ -185,7 +185,7 @@ SCM SCM_print(SCM x) {
 }
 
 SCM SCM_signal_error(unsigned long code, unsigned long line, char* file) {
-  fprintf(stdout, "Error %ld in %s:%ld", code, file, line);
+  fprintf(stdout, "Error %lu in %s:%lu\n", code, file, line);
   exit(code);
 }
 

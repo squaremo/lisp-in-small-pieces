@@ -484,18 +484,22 @@
 (def-runtime-primitive car "SCM_car" 1)
 (def-runtime-primitive + "SCM_Plus" 2)
 (def-runtime-primitive = "SCM_EqnP" 2)
+(def-runtime-primitive null? "SCM_nullp" 1)
+(def-runtime-primitive pair? "SCM_consp" 1)
+(def-runtime-primitive eq? "SCM_eqp" 2)
 
-;; (list ...) isn't fixed arity, so it can't be inlined in the same
+;; `(list ...)` isn't fixed arity, so it can't be inlined in the same
 ;; way as those above. However, it's added to the global environment,
 ;; and defined as a procedure in the runtime. Giving a 'blank'
 ;; description here keeps the expander from making this a
-;; predefined-application (way back in chapter9.ss)
+;; predefined-application (way back in chapter9.ss). Similarly
+;; `apply`.
 (begin
   (set! g.top
         (r-extend* g.top (map (lambda (name)
                                 (make <predefined-variable> name
                                       (make <description>)))
-                              '(list)))))
+                              '(list apply)))))
 
 ;; Test hook
 
@@ -511,11 +515,12 @@
     (if (= res 0)
         (let* ((test (spawn-process "./test"))
                (in (open-character-input-port (get-process-stdout test)))
+               (err (get-process-stderr test))
                (res (wait-for-process test)))
           (if (= res 0)
               (let ((output (with-input-from-port in (lambda () (read)))))
                 output)
-              (error `("Test program reported an error" ,res))))
+              (error `("Test program reported an error" ,res ,(read-lines err)))))
         (error `("Test program did not compile" ,res ,(read-lines err))))))
 
 (define (read-lines binport)
@@ -545,6 +550,7 @@
      (=        . "EQN")
      (eq?      . "EQ")
      (pair?    . "CONSP")
+     (null?    . "NULLP")
      (symbol?  . "SYMBOLP")
      (set-car! . "RPLACA")
      (set-cdr! . "RPLACD")
