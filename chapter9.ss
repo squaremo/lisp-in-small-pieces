@@ -249,7 +249,7 @@
 (define (objectify-application ff e* r)
   (let ((ee* (->arguments (map (lambda (e) (objectify e r)) e*))))
     (cond ((instance-of? ff <function>)
-           (process-closed-application ff ee*))
+           (process-closed-application ff ee* r))
           ((instance-of? ff <predefined-reference>)
            (let* ((fvf (:variable ff))
                   (desc (:description fvf)))
@@ -261,11 +261,11 @@
                  (make <regular-application> ff ee*))))
           (else (make <regular-application> ff ee*)))))
 
-(define (process-closed-application f e*)
+(define (process-closed-application f e* r)
   (let ((v* (:variables f))
         (b (:body f)))
     (if (and (pair? v*) (:dotted? (car (last-pair v*))))
-        (process-nary-closed-application f e*)
+        (process-nary-closed-application f e* r)
         (if (= (length v*) (number-of e*))
             (make <fix-let> v* e* b)
             (objectify-error "Incorrect regular arity" f e*)))))
@@ -290,26 +290,29 @@
           l)
       (error "This isn't even a pair.")))
 
-(define (process-nary-closed-application f e*)
+(define (process-nary-closed-application f e* r)
   (let* ((v* (:variables f))
          (b (:body f))
          (o (make <fix-let>
               v*
               (let gather ((e* e*) (v* v*))
                 (if (:dotted? (car v*))
-                    (make <some-arguments>
-                      (let pack ((e* e*))
-                        (if (instance-of? e* <some-arguments>)
-                            ;; here we are making some code that will
-                            ;; construct the varargs list
-                            (make <predefined-application>
-                              (find-variable? 'cons g.predef)
-                              (make <some-arguments> (:first e*)
-                                    (make <some-arguments> (pack (:others e*))
-                                          (make <no-argument>))))
-                            ;; I think this assumes e* is <no-argument>
-                            (make <constant> '())))
-                      (make <no-argument>))
+                    (let ((predef-cons
+                           (find-variable? 'cons
+                                           (find-predef-environment r))))
+                      (make <some-arguments>
+                        (let pack ((e* e*))
+                          (if (instance-of? e* <some-arguments>)
+                              ;; here we are making some code that will
+                              ;; construct the varargs list
+                              (make <predefined-application>
+                                predef-cons
+                                (make <some-arguments> (:first e*)
+                                      (make <some-arguments> (pack (:others e*))
+                                            (make <no-argument>))))
+                              ;; I think this assumes e* is <no-argument>
+                              (make <constant> '())))
+                        (make <no-argument>)))
                     ;; not dotted
                     (if (instance-of? e* <some-arguments>)
                         (make <some-arguments>
@@ -391,6 +394,9 @@
   (if (instance-of? r <full-environment>)
       (find-global-environment (:next r))
       r))
+
+(define (find-predef-environment r)
+  (find-global-environment (find-global-environment r)))
 
 ;; The start of the global environment is distinguished by a no-vars
 ;; environment
@@ -524,7 +530,7 @@
     (set! g (r-extend* g *special-form-keywords*))
     (set! g (r-extend* g (make-macro-environment level)))
 
-    ;; eval goes in the 
+    ;; eval goes in the global env at each level
     (let ((eval-var (make <predefined-variable>
                       'eval (make <functional-description> = 1)))
           (eval-fn (make <runtime-primitive> eval = 1)))
@@ -886,6 +892,8 @@
     (call/cc (lambda (k)
                (invoke f (list (make <runtime-primitive> k = 1))))))
   1)
+
+(begin (set! g.predef (mark-global-environment g.predef)))
 
 ;; Finally, a REPL
 

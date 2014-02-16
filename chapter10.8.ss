@@ -501,6 +501,8 @@
                                       (make <description>)))
                               '(list apply)))))
 
+(begin (set! g.top (mark-global-environment g.top)))
+
 ;; Test hook
 
 (import os)
